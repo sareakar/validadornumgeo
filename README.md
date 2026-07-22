@@ -10,6 +10,9 @@ Clasifica números como fijo o móvil (CPP) usando la base oficial de ENACOM y g
 
 - [Arquitectura](#arquitectura)
 - [Instalación](#instalación)
+  - [Opción A — Python directo (LXC Asterisk)](#opción-a--python-directo-lxc-asterisk)
+  - [Opción B — Docker (servidor dedicado)](#opción-b--docker-servidor-dedicado)
+- [Puertos](#puertos)
 - [Árbol de decisión](#árbol-de-decisión)
 - [Formatos de entrada soportados](#formatos-de-entrada-soportados)
 - [Formatos de salida generados](#formatos-de-salida-generados)
@@ -63,24 +66,68 @@ Clasifica números como fijo o móvil (CPP) usando la base oficial de ENACOM y g
 
 ## Instalación
 
-```bash
-# Copiar al servidor
-cp -r /workspace/validadortelefonico/ /opt/telval/
+El servicio expone tres interfaces que conviven en la misma instalación:
 
-# Instalar como servicio systemd
-cp /opt/telval/telval.service /etc/systemd/system/
+| Puerto | Protocolo | Uso |
+|--------|-----------|-----|
+| `4573` | TCP | FastAGI — dialplan Asterisk |
+| `8080` | HTTP | REST API + Web UI |
+
+> Verificar disponibilidad antes de instalar:
+> ```bash
+> ss -tlnp | grep -E '4573|8080'
+> ```
+> Si alguno está ocupado, ajustar los puertos en `telval.service` o `docker-compose.yml`.
+
+---
+
+### Opción A — Python directo (LXC Asterisk)
+
+Recomendado para LXC sin soporte de virtualización anidada. Ver [INSTALL.md](INSTALL.md) para instrucciones detalladas.
+
+```bash
+# 1. Clonar
+git clone https://gitea.centraltelefonica.com.ar/jmazzini/validadornumgeo.git /opt/telval
+cd /opt/telval
+
+# 2. Instalar dependencias
+python3 -m pip install -r requirements.txt
+
+# 3. Instalar y arrancar el servicio
+cp telval.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now telval
 
-# Verificar que está corriendo
+# 4. Verificar
 systemctl status telval
+curl http://localhost:8080/health
 ```
 
-**Sin dependencias externas.** Solo requiere Python 3.11+ (stdlib).
+---
 
-Opcional para validación de formato adicional:
+### Opción B — Docker (servidor dedicado)
+
+Recomendado para servidores con Docker disponible (ej: infra-apps). Ver [DEPLOY.md](DEPLOY.md) para instrucciones detalladas incluyendo Caddy como proxy inverso.
+
 ```bash
-pip install phonenumbers
+# 1. Clonar
+git clone https://gitea.centraltelefonica.com.ar/jmazzini/validadornumgeo.git /opt/validadornumgeo
+cd /opt/validadornumgeo
+
+# 2. Levantar
+docker compose up -d --build
+
+# 3. Verificar
+curl http://localhost:8181/health
+```
+
+El `docker-compose.yml` mapea el puerto `8181` del host al `8080` del contenedor para evitar conflictos. Ajustar si es necesario.
+
+Para exponer con HTTPS agregar en el Caddyfile:
+```caddy
+telval.astervoip.com.ar {
+    reverse_proxy localhost:8181
+}
 ```
 
 ---
