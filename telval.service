@@ -1,0 +1,21 @@
+[Unit]
+Description=Validador Telefónico AR (FastAGI + REST API)
+After=network.target asterisk.service
+Wants=asterisk.service
+
+[Service]
+Type=simple
+User=asterisk
+WorkingDirectory=/opt/telval
+ExecStart=/usr/bin/python3 /opt/telval/server.py --agi-host 127.0.0.1 --agi-port 4573 --api-port 8080
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telval
+
+# Para modo externo (comentar la línea ExecStart de arriba y usar esta):
+# ExecStart=/usr/bin/python3 /opt/telval/server.py --agi-host 0.0.0.0 --agi-port 4573 --api-port 8080
+
+[Install]
+WantedBy=multi-user.target
