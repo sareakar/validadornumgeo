@@ -1,0 +1,10 @@
+services:
+  validadornumgeo:
+    build: .
+    container_name: validadornumgeo
+    restart: unless-stopped
+    ports:
+      - "8181:8080"   # web UI + REST API
+      - "4573:4573"   # FastAGI para Asterisk
+    volumes:
+      - ./data:/app/data  # ENACOM CSV actualizable sin rebuild

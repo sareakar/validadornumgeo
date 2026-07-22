@@ -125,6 +125,11 @@ class ValidatorHandler(BaseHTTPRequestHandler):
             }
             self._json(data)
 
+        # ── GET / → Web UI ────────────────────────────────────────
+        elif path in ("", "/"):
+            import web_ui
+            web_ui.handle_index(self)
+
         # ── GET /validate?number=...&provider=...&default_area=... ─
         elif path == "/validate":
             number = q("number") or q("n")
@@ -142,8 +147,17 @@ class ValidatorHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
+        # ── POST /ui/analyze y /ui/process → Web UI ──────────────
+        if path == "/ui/analyze":
+            import web_ui
+            web_ui.handle_analyze(self)
+
+        elif path == "/ui/process":
+            import web_ui
+            web_ui.handle_process(self)
+
         # ── POST /validate/batch ──────────────────────────────────
-        if path in ("/validate/batch", "/batch"):
+        elif path in ("/validate/batch", "/batch"):
             length = int(self.headers.get("Content-Length", 0))
             if not length:
                 return self._error("Body vacío")
