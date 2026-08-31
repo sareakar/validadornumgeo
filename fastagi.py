@@ -8,6 +8,9 @@ Uso en dialplan:
   ; Pasar el número como argumento
   AGI(agi://localhost:4573/validate,${NUMERO})
 
+  ; Con provider_key (opcional) para pedir el string listo para Dial():
+  AGI(agi://localhost:4573/validate,${NUMERO},${AREA},${PROVIDER_KEY},${PREFIX})
+
   ; Variables que devuelve:
   ; TELVAL_VALID      1|0
   ; TELVAL_GEO        AMBA|Interior
@@ -22,6 +25,12 @@ Uso en dialplan:
   ; TELVAL_E164MOV    +5491165512215   (solo CPP/MPP)
   ; TELVAL_ERROR      formato_invalido|numero_invalido|...
   ; TELVAL_SOURCE     ENACOM|enacom_db|heuristica|hint
+  ;
+  ; Solo si se pasó provider_key (agi_arg_3):
+  ; TELVAL_DIAL        string completo listo para Dial() = prefix + formato
+  ;                    del proveedor (ej. "" + "01130032202"). Vacío si el
+  ;                    número es inválido o el provider_key no existe.
+  ; TELVAL_DIAL_ERROR  "" | "numero_invalido" | "provider_desconocido"
 
 Ejemplo de uso completo en dialplan (extensions.conf):
   exten => _X.,1,AGI(agi://localhost:4573/validate,${EXTEN})
@@ -36,6 +45,14 @@ Ejemplo de uso completo en dialplan (extensions.conf):
   exten => invalid,1,Playback(invalid-number)
    same => n,Hangup()
 
+  ; Ejemplo con provider_key/prefix por trunk (round robin, un AGI por
+  ; trunk candidato — ver providers.py para las claves disponibles y
+  ; docs/PRUEBA_AGI_LXC1324.md para el diseño completo):
+  exten => _X.,1,Set(TRUNK=${DB(SIP/750/trunk)})
+   same => n,AGI(agi://localhost:4573/validate,${EXTEN},11,${DB(SIP/750/provider)},${DB(SIP/750/prefix)})
+   same => n,GotoIf($["${TELVAL_DIAL}" = ""]?siguiente_trunk,1)
+   same => n,Dial(SIP/750/${TELVAL_DIAL},60)
+
 Para servidor externo, simplemente cambiar la IP:
   AGI(agi://192.168.1.100:4573/validate,${EXTEN})
 """
@@ -48,6 +65,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 from validator import validate
+from providers import format_for_provider
 
 logger = logging.getLogger("fastagi")
 
@@ -74,21 +92,26 @@ class AGIHandler(socketserver.StreamRequestHandler):
                 key, _, value = line.partition(":")
                 headers[key.strip().lower()] = value.strip()
 
-        # ── Obtener el número desde agi_arg_1 ────────────────────
+        # ── Obtener argumentos: número, área, provider_key, prefix ──
         number = headers.get("agi_arg_1", "").strip()
         default_area = headers.get("agi_arg_2", "11").strip() or "11"
+        provider_key = headers.get("agi_arg_3", "").strip()
+        prefix = headers.get("agi_arg_4", "").strip()
 
         if not number:
             # Intentar con agi_extension como fallback
             number = headers.get("agi_extension", "").strip()
 
-        logger.info("AGI validate: %r (default_area=%s)", number, default_area)
+        logger.info(
+            "AGI validate: %r (default_area=%s, provider_key=%r)",
+            number, default_area, provider_key,
+        )
 
         # ── Validar ───────────────────────────────────────────────
         r = validate(number, default_area=default_area)
 
         # ── Enviar variables al canal ─────────────────────────────
-        vars_to_set = self._build_vars(r)
+        vars_to_set = build_vars(r, provider_key, prefix)
         for name, value in vars_to_set.items():
             self._set_var(name, value)
 
@@ -99,43 +122,6 @@ class AGIHandler(socketserver.StreamRequestHandler):
             r.modalidad or r.line_type or "",
             r.source,
         ))
-
-    def _build_vars(self, r) -> dict:
-        if r.valid:
-            is_cpp = r.modalidad in ("CPP", "MPP")
-            return {
-                "TELVAL_VALID":     "1",
-                "TELVAL_GEO":       r.geografia or "",
-                "TELVAL_TIPO":      r.line_type or "",
-                "TELVAL_MODALIDAD": r.modalidad or "",
-                "TELVAL_OPERADOR":  r.operador or "",
-                "TELVAL_AREA":      r.area_code or "",
-                "TELVAL_10DIG":     r.formats.get("fmt_10dig", ""),
-                "TELVAL_CON0":      r.formats.get("fmt_con_0", ""),
-                "TELVAL_CON015":    r.formats.get("fmt_con_0_15", "") if is_cpp else "",
-                "TELVAL_E164":      r.formats.get("fmt_e164", ""),
-                "TELVAL_E164MOV":   r.formats.get("fmt_e164_movil", "") if is_cpp else "",
-                "TELVAL_CON9":      r.formats.get("fmt_con_9", "") if is_cpp else "",
-                "TELVAL_SOURCE":    r.source,
-                "TELVAL_ERROR":     "",
-            }
-        else:
-            return {
-                "TELVAL_VALID":     "0",
-                "TELVAL_GEO":       "",
-                "TELVAL_TIPO":      "",
-                "TELVAL_MODALIDAD": "",
-                "TELVAL_OPERADOR":  "",
-                "TELVAL_AREA":      "",
-                "TELVAL_10DIG":     "",
-                "TELVAL_CON0":      "",
-                "TELVAL_CON015":    "",
-                "TELVAL_E164":      "",
-                "TELVAL_E164MOV":   "",
-                "TELVAL_CON9":      "",
-                "TELVAL_SOURCE":    "",
-                "TELVAL_ERROR":     r.error or "error_desconocido",
-            }
 
     def _set_var(self, name: str, value: str):
         cmd = f'SET VARIABLE {name} "{value}"\n'
@@ -148,6 +134,66 @@ class AGIHandler(socketserver.StreamRequestHandler):
         self.wfile.write((cmd + "\n").encode("utf-8"))
         self.wfile.flush()
         self.rfile.readline()
+
+
+def build_vars(r, provider_key: str = "", prefix: str = "") -> dict:
+    """
+    Arma el diccionario de variables TELVAL_* a partir de un PhoneResult.
+    Función de módulo (no método) para poder testearla sin levantar un
+    socket real.
+    """
+    if r.valid:
+        is_cpp = r.modalidad in ("CPP", "MPP")
+        v = {
+            "TELVAL_VALID":     "1",
+            "TELVAL_GEO":       r.geografia or "",
+            "TELVAL_TIPO":      r.line_type or "",
+            "TELVAL_MODALIDAD": r.modalidad or "",
+            "TELVAL_OPERADOR":  r.operador or "",
+            "TELVAL_AREA":      r.area_code or "",
+            "TELVAL_10DIG":     r.formats.get("fmt_10dig", ""),
+            "TELVAL_CON0":      r.formats.get("fmt_con_0", ""),
+            "TELVAL_CON015":    r.formats.get("fmt_con_0_15", "") if is_cpp else "",
+            "TELVAL_E164":      r.formats.get("fmt_e164", ""),
+            "TELVAL_E164MOV":   r.formats.get("fmt_e164_movil", "") if is_cpp else "",
+            "TELVAL_CON9":      r.formats.get("fmt_con_9", "") if is_cpp else "",
+            "TELVAL_SOURCE":    r.source,
+            "TELVAL_ERROR":     "",
+        }
+    else:
+        v = {
+            "TELVAL_VALID":     "0",
+            "TELVAL_GEO":       "",
+            "TELVAL_TIPO":      "",
+            "TELVAL_MODALIDAD": "",
+            "TELVAL_OPERADOR":  "",
+            "TELVAL_AREA":      "",
+            "TELVAL_10DIG":     "",
+            "TELVAL_CON0":      "",
+            "TELVAL_CON015":    "",
+            "TELVAL_E164":      "",
+            "TELVAL_E164MOV":   "",
+            "TELVAL_CON9":      "",
+            "TELVAL_SOURCE":    "",
+            "TELVAL_ERROR":     r.error or "error_desconocido",
+        }
+
+    # provider_key es opcional — si no vino, comportamiento idéntico al
+    # de antes (retrocompatible con dialplans que no lo usan).
+    if provider_key:
+        v.update(_dial_vars(r, provider_key, prefix))
+
+    return v
+
+
+def _dial_vars(r, provider_key: str, prefix: str) -> dict:
+    """TELVAL_DIAL / TELVAL_DIAL_ERROR — string listo para Dial() por trunk."""
+    if not r.valid:
+        return {"TELVAL_DIAL": "", "TELVAL_DIAL_ERROR": "numero_invalido"}
+    fmt = format_for_provider(r.formats, r.line_type, provider_key)
+    if fmt is None:
+        return {"TELVAL_DIAL": "", "TELVAL_DIAL_ERROR": "provider_desconocido"}
+    return {"TELVAL_DIAL": f"{prefix}{fmt}", "TELVAL_DIAL_ERROR": ""}
 
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):

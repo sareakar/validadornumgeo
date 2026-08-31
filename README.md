@@ -389,6 +389,27 @@ exten => _X.,1,AGI(agi://127.0.0.1:4573/validate,${EXTEN},351)
 | `TELVAL_SOURCE` | `enacom_db` / `hint` / `heuristica` | Fuente de clasificación |
 | `TELVAL_ERROR` | `formato_invalido` / ... | Descripción del error (si VALID=0) |
 
+### Argumentos opcionales — `provider_key` y `prefix` (por trunk)
+
+Además de `${NUMERO}` y el área por defecto, el AGI acepta un 3° y 4° argumento
+para pedir el string **listo para `Dial()`** según el proveedor/trunk que se
+va a usar — útil con round robin entre varios trunks, donde cada uno puede
+requerir un formato distinto:
+
+```
+AGI(agi://127.0.0.1:4573/validate,${NUMERO},${AREA},${PROVIDER_KEY},${PREFIX})
+```
+
+- `provider_key` *(opcional)* — una clave de [providers.py](providers.py) (`movistar`, `personal`, `claro`, ...). Si se omite, el AGI se comporta exactamente igual que sin esta extensión (retrocompatible).
+- `prefix` *(opcional)* — string que se antepone literal al formato resuelto (ej. un código de acceso del trunk). Vacío si no aplica.
+
+| Variable | Valores | Descripción |
+|----------|---------|--------------|
+| `TELVAL_DIAL` | ej. `01130032202` | `prefix` + formato correcto para `provider_key`, listo para `Dial()`. Vacío si el número es inválido o `provider_key` no existe. |
+| `TELVAL_DIAL_ERROR` | `` / `numero_invalido` / `provider_desconocido` | Motivo si `TELVAL_DIAL` vino vacío. |
+
+**Por qué `provider_key` y no el nombre del trunk**: el nombre de un trunk es arbitrario por cliente (cada uno le puede poner el nombre que quiera), así que el AGI nunca intenta adivinar el proveedor a partir de ese nombre. Quien da de alta el trunk decide una vez qué `provider_key` le corresponde y se lo pasa explícito — sin tablas de mapeo por cliente que mantener. Diseño completo y casos reales en [docs/PRUEBA_AGI_LXC1324.md](docs/PRUEBA_AGI_LXC1324.md).
+
 ### Pasar a modo externo
 
 Cuando el validador corre en un servidor dedicado, solo hay que:

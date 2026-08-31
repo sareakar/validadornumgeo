@@ -3,6 +3,12 @@ services:
     build: .
     container_name: validadornumgeo
     restart: unless-stopped
+    # --agi-host 0.0.0.0: FastAGI (4573) por default solo escucha en
+    # 127.0.0.1 (server.py, pensado originalmente para instalación local
+    # por LXC). Para "modo externo" (un solo telval centralizado para
+    # varios clientes, ver docs/PRUEBA_AGI_LXC1324.md) hay que exponerlo
+    # explícito, igual que --api-host que ya es 0.0.0.0 por default.
+    command: python3 server.py --agi-host 0.0.0.0
     ports:
       - "8181:8080"   # web UI + REST API
       - "4573:4573"   # FastAGI para Asterisk
