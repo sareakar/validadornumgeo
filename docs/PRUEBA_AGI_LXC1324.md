@@ -276,20 +276,51 @@ telval, reintroduce el problema que se evitó centralizando el servicio
       `devops@` por key + `su` a `root` con password compartida por el
       usuario, no persistida en este repo). **No resolvió el problema** —
       ver hallazgo abajo.
-- [ ] **BLOQUEANTE actual, fuera de este VM**: `ufw` no tiene ningún
-      efecto sobre el puerto 4573 porque Docker maneja `iptables` por su
-      cuenta — la chain `DOCKER` ya tiene `ACCEPT` **sin restricción de
-      IP** (`0.0.0.0/0 → 172.23.0.2:4573`) para ese puerto, evaluada en
-      `FORWARD` antes de que el tráfico llegue a las reglas de `ufw`
-      (que solo aplican a `INPUT`). Confirmado con `iptables -t nat -L`,
-      `iptables -L DOCKER -n`, `iptables -L ufw-user-input -n` en
-      `docs.astervoip.com.ar` como root.
-      **A pesar de eso, sigue "Connection refused" desde Ungar Y desde
-      una IP no relacionada** (probado igual) — el bloqueo real está
-      **río arriba de este VM**: firewall del hypervisor Proxmox
-      (`nodo4`) a nivel de interfaz de red de la VM, o firewall de red
-      de OVH a nivel de panel. El agente no tiene acceso a ninguno de
-      los dos — pendiente de que el usuario lo revise o dé acceso.
+- [x] **`ufw` confirmado irrelevante para este puerto** — Docker maneja
+      `iptables` por su cuenta, la chain `DOCKER` ya tiene `ACCEPT` **sin
+      restricción de IP** (`0.0.0.0/0 → 172.23.0.2:4573`), evaluada en
+      `FORWARD` antes de llegar a las reglas de `ufw` (que solo aplican a
+      `INPUT`). Se recorrieron también Proxmox (nodo, VM-level) y el Edge
+      Network Firewall de OVH — todos descartados. **La causa real no era
+      ningún firewall** — ver sección "RESUELTO" justo abajo.
+
+### RESUELTO (2026-08-31) — causa real: NO era ningún firewall
+
+Después de descartar `ufw`, Docker (`DOCKER`/`FORWARD` chain), Proxmox
+(nodo, VM-level, y consultado Datacenter), y el Edge Network Firewall de
+OVH (desactivado, sin reglas) — la prueba decisiva fue conectar **desde la
+propia VM `docs` a su propia IP pública** (no `localhost`): también
+fallaba. Y conectando directo a la IP del contenedor Docker
+(`172.23.0.2:4573`, sin NAT de por medio) **también fallaba** — mientras
+que el mismo test a `:8080` (REST) funcionaba. Eso aisló el problema
+adentro de la propia aplicación, nada de red.
+
+**Causa real**: [server.py](../server.py) — `--agi-host` tiene default
+`127.0.0.1`, mientras que `--api-host` default es `0.0.0.0`. El
+`docker-compose.yml` arrancaba con `python3 server.py` sin argumentos, así
+que FastAGI quedaba escuchando solo en loopback **dentro del propio
+contenedor**, inalcanzable incluso desde la IP del contenedor en la red
+docker. Consistente con que originalmente telval se pensó para
+instalación local (Opción A del README) y nunca se activó "modo externo"
+al desplegarlo como servicio centralizado.
+
+**Fix**: agregado `command: python3 server.py --agi-host 0.0.0.0` en
+`docker-compose.yml` (commit `1e681fd`). Desplegado en
+`docs.astervoip.com.ar`: hubo que además arreglar `git pull` ahí (el repo
+en `/opt/validadornumgeo` es de `root`, y `devops` tenía
+`.git-credentials` pero sin `credential.helper` configurado para usarlo —
+se configuró `credential.helper = store --file=/home/devops/.git-credentials`
+para `root`). Pull + `docker compose up -d --build` aplicados.
+
+**Verificado end-to-end** con un cliente AGI crudo (no Asterisk real)
+contra `telval.centraltelefonica.com.ar:4573`: valida
+`1130032202` → `CPP`, `Telecom`, `AMBA`, todos los formatos correctos,
+y con `provider_key=movistar` devuelve `TELVAL_DIAL="+5491130032202"`
+(formato E.164 móvil correcto). El regreso a "modo externo" está
+completo y probado — **falta únicamente el interno de prueba +
+`macro-dialout-qa` en Ungar** (a cargo del usuario) para probarlo con
+Asterisk real.
+
 - [ ] **Hardening pendiente (una vez destrabado lo anterior)**: el 4573
       está hoy abierto a todo Internet a nivel Docker, sin restricción
       real por IP (el `ufw allow` de arriba no restringe nada). Hay que
@@ -302,6 +333,27 @@ telval, reintroduce el problema que se evitó centralizando el servicio
       (persistir con `iptables-persistent`/`netfilter-persistent` o
       equivalente para que sobreviva un reinicio — a definir cómo
       persisten reglas en este servidor).
+- [x] **`provider_key = "lineip"` agregado a `providers.py`** (2026-09-01):
+      fijo `fmt_intl` (`54`+códLDN+número), móvil `fmt_intl_movil`
+      (`549`+códLDN+número) — mismo formato que `voximplant`, confirmado
+      con `format_for_provider()` (`1130032202`→`5491130032202` móvil,
+      `1143219876`→`541143219876` fijo). Documentación completa del
+      contrato de la API para el equipo de arquitectura del cliente en
+      [API_AGI_INTEGRACION.md](API_AGI_INTEGRACION.md).
+- [x] **Bug encontrado y corregido en `default_area`** (2026-09-01): el
+      default del proyecto era `"11"` (2 dígitos), pero
+      [validator.py:233](../validator.py#L233) exige 3 dígitos
+      (`len(default_area) == 3 and default_area in _AREA3`) para completar
+      un número de 7 dígitos — `"11"` nunca cumple esa condición, así que
+      el default no hacía nada. Además es conceptualmente imposible: un
+      número de 7 dígitos **nunca puede ser AMBA** (área 11), así que "11"
+      como default no tenía sentido ni en la intención. Se quitó el
+      default en las 4 capas (`validator.py`, `main.py` CLI, `api.py`
+      REST, `fastagi.py` AGI) — ahora sin especificar área explícita, un
+      número de 7/6 dígitos sale inválido siempre (comportamiento ya
+      verificado, sin regresiones en los tests). Corregido también en
+      `dialplan_example.conf` (ya no hardcodea `,11`) y en
+      `API_AGI_INTEGRACION.md`.
 - [ ] Definir el interno/contexto de prueba aislado en Ungar — **lo crea
       el usuario desde el front** (no el agente), junto con un
       `macro-dialout-qa` en un include aparte para probar. Queda para

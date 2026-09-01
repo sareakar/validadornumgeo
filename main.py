@@ -422,8 +422,9 @@ def main():
     p_val.add_argument("numbers", nargs="+", help="Números a validar")
     p_val.add_argument("--provider", "-p", default=None, help="Proveedor destino")
     p_val.add_argument("--all-formats", "-f", action="store_true", help="Mostrar todos los formatos")
-    p_val.add_argument("--default-area", "-a", default="11",
-                       help="Área a asumir para números incompletos (default: 11 = BA)")
+    p_val.add_argument("--default-area", "-a", default=None,
+                       help="Área a asumir para números incompletos de 7/6 dígitos "
+                            "(ningún default — sin esto, esos números salen inválidos)")
     p_val.set_defaults(func=cmd_validate)
 
     # ── file ──────────────────────────────────────────────────────
@@ -434,8 +435,9 @@ def main():
     p_file.add_argument("--output", "-o", default=None, help="Archivo de salida CSV")
     p_file.add_argument("--only-valid", action="store_true", help="Solo incluir números válidos")
     p_file.add_argument("--all-formats", "-f", action="store_true", help="Mostrar todos los formatos")
-    p_file.add_argument("--default-area", "-a", default="11",
-                       help="Área a asumir para números incompletos (default: 11 = BA)")
+    p_file.add_argument("--default-area", "-a", default=None,
+                       help="Área a asumir para números incompletos de 7/6 dígitos "
+                            "(ningún default — sin esto, esos números salen inválidos)")
     p_file.set_defaults(func=cmd_file)
 
     # ── export ────────────────────────────────────────────────────
@@ -450,8 +452,9 @@ def main():
                        help="Archivo de salida (default: <entrada>_<provider>.csv)")
     p_exp.add_argument("--only-valid",   action="store_true",
                        help="Omitir inválidos (default: se incluyen como fila vacía)")
-    p_exp.add_argument("--default-area", "-a", default="11",
-                       help="Área por defecto para números incompletos")
+    p_exp.add_argument("--default-area", "-a", default=None,
+                       help="Área por defecto para números incompletos de 7/6 dígitos "
+                            "(ningún default — sin esto, esos números salen inválidos)")
     p_exp.set_defaults(func=cmd_export)
 
     # ── providers ─────────────────────────────────────────────────

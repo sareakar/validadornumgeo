@@ -294,7 +294,8 @@ python3 main.py export <archivo> <carrier_o_discador> [opciones]
   --column / -c         Columna donde está el número
   --output / -o         Archivo de salida (default: <entrada>_<provider>.csv)
   --only-valid          Omitir inválidos (default: se incluyen como fila vacía)
-  --default-area / -a   Área para números incompletos (default: 11)
+  --default-area / -a   Área para números de 7/6 dígitos (ningún default —
+                         sin esto, esos números salen inválidos)
 ```
 
 | Carrier/Discador | Columna del número | Columnas extra incluidas |
@@ -316,7 +317,7 @@ python3 main.py export <archivo> <carrier_o_discador> [opciones]
 | `--output` / `-o` | Archivo CSV de salida (si no se especifica: pantalla) | pantalla |
 | `--only-valid` | Excluir números inválidos del CSV de salida | no |
 | `--all-formats` / `-f` | Mostrar/incluir todos los formatos | no |
-| `--default-area` / `-a` | Área a asumir para números de 7 dígitos (interior) | `11` |
+| `--default-area` / `-a` | Área a asumir para números de 7 dígitos (interior) | ninguno — sin especificar, esos números salen inválidos |
 
 ### Columnas del CSV de salida
 
@@ -444,7 +445,7 @@ curl "http://localhost:8080/validate?number=1130032202&provider=simvoz"
 Parámetros:
 - `number` *(requerido)* — número a validar (cualquier formato)
 - `provider` *(opcional)* — carrier para formato específico (ver `/providers`)
-- `default_area` *(opcional, default: `11`)* — área para números incompletos
+- `default_area` *(opcional, sin default)* — área para números de 7/6 dígitos; sin especificarla, esos números salen inválidos
 
 Respuesta:
 ```json
@@ -486,7 +487,7 @@ curl -X POST http://localhost:8080/validate/batch \
 Body JSON:
 - `numbers` *(requerido)* — lista de números (máx. 10.000)
 - `provider` *(opcional)* — carrier de salida
-- `default_area` *(opcional, default: `11`)*
+- `default_area` *(opcional, sin default)* — ver nota arriba
 
 Respuesta:
 ```json

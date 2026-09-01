@@ -94,7 +94,7 @@ class AGIHandler(socketserver.StreamRequestHandler):
 
         # ── Obtener argumentos: número, área, provider_key, prefix ──
         number = headers.get("agi_arg_1", "").strip()
-        default_area = headers.get("agi_arg_2", "11").strip() or "11"
+        default_area = headers.get("agi_arg_2", "").strip() or None
         provider_key = headers.get("agi_arg_3", "").strip()
         prefix = headers.get("agi_arg_4", "").strip()
 

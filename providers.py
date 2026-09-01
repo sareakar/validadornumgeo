@@ -210,6 +210,14 @@ PROVIDERS: dict[str, Provider] = {
         notes="E.164",
         template=_TEMPLATE_E164,
     ),
+    "lineip": Provider(
+        name="LineIP",
+        description="Trunk SIP LineIP (piloto Ungar / dycrecupero.centraltelefonica.com.ar)",
+        landline_format="fmt_intl",
+        mobile_format="fmt_intl_movil",
+        notes="Fijo: 54+códLDN+número. Móvil: 549+códLDN+número. Sin +, sin 0 inicial. Mismo formato que voximplant.",
+        template=_TEMPLATE_E164,
+    ),
 
     # ── Discadores (dialers) ──────────────────────────────────────────────────
 

@@ -136,7 +136,7 @@ class ValidatorHandler(BaseHTTPRequestHandler):
             if not number:
                 return self._error("Parámetro 'number' requerido")
             provider     = q("provider")
-            default_area = q("default_area", "11")
+            default_area = q("default_area")
             r = validate(number, default_area=default_area)
             self._json(_result_to_json(r, provider))
 
@@ -168,7 +168,7 @@ class ValidatorHandler(BaseHTTPRequestHandler):
 
             numbers      = body.get("numbers", [])
             provider     = body.get("provider")
-            default_area = body.get("default_area", "11")
+            default_area = body.get("default_area")
 
             if not isinstance(numbers, list):
                 return self._error("'numbers' debe ser una lista")

@@ -154,7 +154,7 @@ def _remove_15(n: str) -> tuple[str, bool]:
 
 # ─── PASO 2+3: Geografía y completado ────────────────────────────────────────
 
-def _classify_and_complete(n: str, hint: str | None, default_area: str = "11"
+def _classify_and_complete(n: str, hint: str | None, default_area: str | None = None
                            ) -> tuple[str | None, str | None, str | None, str | None]:
     """
     Clasifica el número limpio (sin prefijos de país) en AMBA o Interior
@@ -263,7 +263,7 @@ def _classify_and_complete(n: str, hint: str | None, default_area: str = "11"
 
 # ─── Parser principal ─────────────────────────────────────────────────────────
 
-def _parse_raw(raw: str, default_area: str = "11"
+def _parse_raw(raw: str, default_area: str | None = None
                ) -> tuple[str | None, str | None, str | None, str | None]:
     """
     Retorna (national_10, geografia, hint, repair_note).
@@ -327,7 +327,7 @@ def _build_formats(n10: str, area: str, subscriber: str, line_type: str) -> dict
 
 # ─── Punto de entrada público ─────────────────────────────────────────────────
 
-def validate(raw: str, default_area: str = "11") -> PhoneResult:
+def validate(raw: str, default_area: str | None = None) -> PhoneResult:
     result = PhoneResult(raw)
 
     n10, geografia, hint, repair_note = _parse_raw(raw, default_area)
@@ -397,5 +397,5 @@ def validate(raw: str, default_area: str = "11") -> PhoneResult:
     return result
 
 
-def validate_bulk(numbers: list[str], default_area: str = "11") -> list[PhoneResult]:
+def validate_bulk(numbers: list[str], default_area: str | None = None) -> list[PhoneResult]:
     return [validate(n, default_area) for n in numbers]
