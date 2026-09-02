@@ -199,6 +199,11 @@ def _dial_vars(r, provider_key: str, prefix: str) -> dict:
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    # Default de Python (5) es demasiado chico para ráfagas de discador —
+    # con >5 conexiones simultáneas, las que exceden el backlog pierden el
+    # primer SYN y el cliente reintenta ~1s después (medido en producción,
+    # ver docs/PRUEBA_AGI_LXC1324.md). 128 cubre ráfagas grandes sin costo.
+    request_queue_size = 128
 
 
 def start(host: str = "0.0.0.0", port: int = 4573, block: bool = True):

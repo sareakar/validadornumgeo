@@ -354,13 +354,68 @@ Asterisk real.
       verificado, sin regresiones en los tests). Corregido también en
       `dialplan_example.conf` (ya no hardcodea `,11`) y en
       `API_AGI_INTEGRACION.md`.
-- [ ] Definir el interno/contexto de prueba aislado en Ungar — **lo crea
-      el usuario desde el front** (no el agente), junto con un
-      `macro-dialout-qa` en un include aparte para probar. Queda para
-      cuando el 4573 esté abierto.
-- [ ] Cargar `${DB(${Trunk}/provider)}` (y `prefix` si aplica) en AstDB
-      para el/los trunk(s) reales de Ungar, siguiendo el mismo patrón que
-      `troncalActivo`/`outCID` ya usan en `macro-dialout`.
+- [x] **Piloto validado end-to-end con llamada real** (2026-09-01, vía
+      `SIP/100`): el usuario insertó el bloque QA **directo en el
+      `[macro-dialout]` real** de `dycrecupero` (no en una copia
+      `-qa` separada — confirmado por el usuario, y verificado por el
+      agente comparando contra la versión bajada: coincide exacto, sin
+      desvíos). Es el estado permanente actual de producción en Ungar,
+      no un test descartable. `macro-dialout` llamó al AGI, `TELVAL-QA: 65512215 -> 5491165512215`, `Dial()` armó
+      `SIP/LineIP/5491165512215` correctamente, el proveedor **aceptó y
+      contestó** la llamada. Después falló el audio
+      (`SRTCP unprotect failed ... authentication failure`) — **descartado
+      que sea del validador/AGI**: se probó con números fijos por el mismo
+      macro y cursan bien: la falla es específica de destinos **celulares**
+      vía el trunk `SIP/LineIP`, probablemente el proveedor protegiendo su
+      salida GSM (hipótesis del usuario, consistente con que solo falla
+      celular). Queda como tema aparte, no bloquea ni afecta el trabajo de
+      este proyecto — a resolver con el proveedor del trunk.
+- [x] **Commit `80722e1` desplegado en `telval.centraltelefonica.com.ar`**
+      (2026-09-01): pull + `docker compose up -d --build` en
+      `docs.astervoip.com.ar`. Verificado con
+      `scratchpad/simular_agi.py` (cliente AGI crudo, sin tocar Ungar):
+      `1130032202` con `provider_key=lineip` → `TELVAL_DIAL=5491130032202`
+      (móvil), `1143219876` → `TELVAL_DIAL=541143219876` (fijo). `lineip`
+      funcionando en producción del lado de telval.
+- [x] Interno de prueba + validación con llamada real en Ungar — hecho,
+      ver hallazgo de arriba (2026-09-01).
+
+- [x] **Replicado en `macro-dialout-discadores`** (2026-09-02): mismo
+      bloque, mismo criterio (`provider_key="lineip"` hardcodeado,
+      insertado antes del único `Dial()`, cubre los reintentos del
+      round-robin de discadores igual que en `macro-dialout`). Cambio
+      revisado y aprobado por el usuario antes de aplicar (diff mostrado
+      en el chat). Backup previo:
+      `/etc/asterisk/partesextensions/macros.conf.bak_20260902_101959`
+      en `dycrecupero`. Aplicado con `sudo` (passwordless para `soporte`
+      en este server — a diferencia de `docs.astervoip.com.ar`). Verificado
+      contra lo aprobado (diff limpio, solo diferencia cosmética de
+      tildes en un comentario) y `dialplan reload` sin errores de sintaxis.
+
+- [x] **Informe de uso/latencia** (2026-09-02, ventana 18:49-20:12 —
+      `/var/log/asterisk/full` en `dycrecupero` no cubre el día completo,
+      motivo de la rotación/truncado sin identificar): 3 llamadas
+      validadas por `macro-dialout` (ninguna por `macro-dialout-discadores`
+      todavía), las 3 correctas. Latencia real medida desde `dycrecupero`
+      contra `telval` (20 round-trips): min 4.9ms, max 11.6ms, promedio
+      6.3ms, mediana 5.4ms — demora imperceptible para una llamada real.
+
+## Próximos pasos (a cargo del usuario, sesión siguiente — "mañana")
+
+- [ ] **Reemplazar el `provider_key="lineip"` hardcodeado por una tabla
+      MySQL** (proveedor + key), en vez de AstDB — decisión del usuario,
+      dado que "todo el sistema está en MySQL". Sigue pendiente ubicar el
+      paso que sincroniza esa tabla hacia AstDB (no encontrado en
+      `ProveedoresIP/ABM.php`/`Cuerpo.php` — ver conversación del
+      2026-09-01) antes de agregarle una columna nueva.
+- [ ] **Revisión de rutas** — el usuario reporta "una ensalada importante,
+      incluso rutas mal configuradas" en el enrutamiento saliente de
+      Ungar (más allá de lo tocado en este piloto). Alcance y prioridad a
+      definir por el usuario.
+- [ ] Tema SRTCP/GSM con destinos celulares por `SIP/LineIP` — confirmado
+      no relacionado a este proyecto (fijos cursan bien por el mismo
+      macro). Ticket aparte para el proveedor del trunk si se decide
+      perseguir.
 
 ---
 
