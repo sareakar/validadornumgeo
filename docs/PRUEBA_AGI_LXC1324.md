@@ -400,6 +400,43 @@ Asterisk real.
       contra `telval` (20 round-trips): min 4.9ms, max 11.6ms, promedio
       6.3ms, mediana 5.4ms — demora imperceptible para una llamada real.
 
+- [x] **Prueba de carga concurrente + fix de backlog TCP** (2026-09-02):
+      30 conexiones AGI simultáneas (vía `ThreadPoolExecutor`, todas
+      disparadas en el mismo instante) revelaron que 22 resolvían rápido
+      (~8-13ms) pero 7 tardaban ~1011-1016ms parejo — firma de backlog
+      TCP lleno (`socketserver.TCPServer.request_queue_size` default de
+      Python = 5, nunca sobreescrito). **Fix**: `request_queue_size = 128`
+      en `ThreadedTCPServer` (`fastagi.py`), commit `c352501`, desplegado.
+      Repetida la misma prueba (30 simultáneas exactas) después del fix:
+      **empeoró** — las 30 tardaron ~1.22s parejo. Diagnosticado con
+      `dmesg -T` en `docs.astervoip.com.ar`: el kernel activó protección
+      **anti-SYN-flood** en el puerto 4573 (`Possible SYN flooding on
+      port 4573. Sending cookies.`), confirmado por timestamp coincidente
+      con la prueba. Es un mecanismo distinto al backlog de la app.
+      **Repetida con ritmo realista** (30 llamadas escalonadas en 2s,
+      ~1 cada 67ms — mucho más parecido a cómo Asterisk origina llamadas
+      de discador en la práctica, no puede originar 30 al mismo
+      microsegundo): **5-11ms parejo, sin degradación, igual que la
+      prueba secuencial**. Conclusión: el fix del backlog es una mejora
+      real y queda desplegada; el escenario de SYN-flood solo aparece con
+      una ráfaga sintética irrealmente sincronizada, no representa el uso
+      real esperado — no requiere acción adicional por ahora, pero queda
+      anotado por si en producción real con volumen alto se observa algo
+      similar (revisar `dmesg -T | grep -i "syn flood"` en
+      `docs.astervoip.com.ar` como primer diagnóstico).
+
+- [x] **Repo movido a `astervoipinfra/validadornumgeo`** (2026-09-02):
+      el usuario forkeó `jmazzini/validadornumgeo` en Gitea a un repo de
+      organización. Estaba 2 commits atrás (`80722e1`, `c352501`) —
+      actualizado con un push simple (sin divergencia). `origin` en este
+      clon local y en `/opt/validadornumgeo` de `docs.astervoip.com.ar`
+      apuntan ahora a
+      `https://gitea.centraltelefonica.com.ar/astervoipinfra/validadornumgeo.git`
+      en vez de `jmazzini/...`. Push doble a GitHub (`sareakar/...`) se
+      mantiene sin cambios. Credenciales guardadas en `docs` (el
+      `credential.helper` que apunta a `/home/devops/.git-credentials`)
+      siguen funcionando con la URL nueva sin pedir password de nuevo.
+
 ## Próximos pasos (a cargo del usuario, sesión siguiente — "mañana")
 
 - [ ] **Reemplazar el `provider_key="lineip"` hardcodeado por una tabla
