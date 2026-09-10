@@ -91,17 +91,17 @@ check("Mendoza → área 261", r.area_code == "261")
 section("Prefijo 15 en interior — área ANTES del 15 ([área]15[sub])")
 
 # 0[área]15[sub] → strip 0 → [área]15[sub] (12 dig) → _remove_15 quita 15
-r = validate("0351156551221")
-check("Córdoba 0351-15-6551221 → válido",   r.valid, r.error)
-check("Córdoba 0351-15-6551221 → mobile",   r.line_type == "mobile", r.line_type)
-check("Córdoba 0351-15-6551221 → área 351", r.area_code == "351",    r.area_code)
-check("Córdoba 0351-15-6551221 → 10dig",    r.formats.get("fmt_10dig") == "3516551221",
+r = validate("0351154371234")
+check("Córdoba 0351-15-4371234 → válido",   r.valid, r.error)
+check("Córdoba 0351-15-4371234 → mobile",   r.line_type == "mobile", r.line_type)
+check("Córdoba 0351-15-4371234 → área 351", r.area_code == "351",    r.area_code)
+check("Córdoba 0351-15-4371234 → 10dig",    r.formats.get("fmt_10dig") == "3514371234",
       r.formats.get("fmt_10dig"))
 
-r = validate("351-15-655-1221")
+r = validate("351-15-437-1234")
 check("Córdoba 351-15-... separadores → válido",   r.valid, r.error)
 check("Córdoba 351-15-... separadores → mobile",   r.line_type == "mobile", r.line_type)
-check("Córdoba 351-15-... separadores → 10dig",    r.formats.get("fmt_10dig") == "3516551221",
+check("Córdoba 351-15-... separadores → 10dig",    r.formats.get("fmt_10dig") == "3514371234",
       r.formats.get("fmt_10dig"))
 
 r = validate("0261154567890")
@@ -112,25 +112,25 @@ check("Mendoza 0261-15-4567890 → área 261", r.area_code == "261",    r.area_c
 section("Prefijo 15 en interior — 15 ANTES del área (15[área][sub])")
 
 # 15[área3][sub7] = 12 dígitos (sin 0 adelante)
-r = validate("153516551221")
-check("15-351-6551221 (sin 0) → válido",   r.valid, r.error)
-check("15-351-6551221 (sin 0) → mobile",   r.line_type == "mobile",  r.line_type)
-check("15-351-6551221 (sin 0) → área 351", r.area_code == "351",     r.area_code)
-check("15-351-6551221 (sin 0) → 10dig",    r.formats.get("fmt_10dig") == "3516551221",
+r = validate("153514371234")
+check("15-351-4371234 (sin 0) → válido",   r.valid, r.error)
+check("15-351-4371234 (sin 0) → mobile",   r.line_type == "mobile",  r.line_type)
+check("15-351-4371234 (sin 0) → área 351", r.area_code == "351",     r.area_code)
+check("15-351-4371234 (sin 0) → 10dig",    r.formats.get("fmt_10dig") == "3514371234",
       r.formats.get("fmt_10dig"))
 
 # 015[área3][sub7] = 13 dígitos → strip 0 → 12 dígitos empezando con 15
-r = validate("0153516551221")
-check("015-351-6551221 → válido",   r.valid, r.error)
-check("015-351-6551221 → mobile",   r.line_type == "mobile",  r.line_type)
-check("015-351-6551221 → área 351", r.area_code == "351",     r.area_code)
-check("015-351-6551221 → 10dig",    r.formats.get("fmt_10dig") == "3516551221",
+r = validate("0153514371234")
+check("015-351-4371234 → válido",   r.valid, r.error)
+check("015-351-4371234 → mobile",   r.line_type == "mobile",  r.line_type)
+check("015-351-4371234 → área 351", r.area_code == "351",     r.area_code)
+check("015-351-4371234 → 10dig",    r.formats.get("fmt_10dig") == "3514371234",
       r.formats.get("fmt_10dig"))
 
-r = validate("15-351-655-1221")
+r = validate("15-351-437-1234")
 check("15-351-... separadores → válido",   r.valid, r.error)
 check("15-351-... separadores → mobile",   r.line_type == "mobile",  r.line_type)
-check("15-351-... separadores → 10dig",    r.formats.get("fmt_10dig") == "3516551221",
+check("15-351-... separadores → 10dig",    r.formats.get("fmt_10dig") == "3514371234",
       r.formats.get("fmt_10dig"))
 
 # Mendoza: 15[261][sub7]
@@ -147,16 +147,16 @@ check("015-381-4567890 Tucumán → área 381", r.area_code == "381",     r.area
 
 section("Prefijo 15 en interior — formatos de salida CPP")
 
-r = validate("0351156551221")
+r = validate("0351154371234")
 if r.valid and r.line_type == "mobile":
     check("CPP Córdoba → fmt_con_0_15 correcto",
-          r.formats.get("fmt_con_0_15") == "0351156551221",
+          r.formats.get("fmt_con_0_15") == "0351154371234",
           r.formats.get("fmt_con_0_15"))
     check("CPP Córdoba → fmt_e164_movil con +549",
-          r.formats.get("fmt_e164_movil") == "+5493516551221",
+          r.formats.get("fmt_e164_movil") == "+5493514371234",
           r.formats.get("fmt_e164_movil"))
     check("CPP Córdoba → fmt_con_0 sin 15",
-          r.formats.get("fmt_con_0") == "03516551221",
+          r.formats.get("fmt_con_0") == "03514371234",
           r.formats.get("fmt_con_0"))
 else:
     check("CPP Córdoba validado previamente", False, f"válido={r.valid} tipo={r.line_type}")

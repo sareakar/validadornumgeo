@@ -437,6 +437,41 @@ Asterisk real.
       `credential.helper` que apunta a `/home/devops/.git-credentials`)
       siguen funcionando con la URL nueva sin pedir password de nuevo.
 
+## Segundo cliente — Nexo (`nexo.centraltelefonica.com.ar`)
+
+> Config real y detalle completo en `client_configs/nexo/` (local,
+> ignorado por git — no confundir con este archivo, que sí va al repo).
+
+Mismo patrón que Ungar, con dos diferencias reales encontradas al
+replicar (justo lo que se esperaba: "otro cliente, otro proveedor"):
+
+- **Trunk `SIP/Iplan`**, formato real `fmt_con_0` (fijo) /
+  `fmt_con_0_15` (móvil) — decodificado de `permisos.conf`. El
+  `provider_key` genérico **`iplan`** que ya existía en `providers.py`
+  tiene un formato distinto (`fmt_10dig`) y **no aplica** a este trunk —
+  se creó una key nueva, **`nexo`**, con el formato correcto (mismo
+  formato que `personal`, pero nombrada por el cliente real para no
+  confundir el carrier).
+- Un compañero del usuario tenía un **parche temporal** en
+  `macro-dialout-discadores` (no en `macro-dialout`) que hacía a mano lo
+  mismo que nuestro AGI para el caso de números de interior de 10 dígitos
+  empezando con 2 o 3 (insertaba `0`+área(3 dig, siempre)+`15`) — con dos
+  huecos que el AGI resuelve bien (área de 4 dígitos, y no asumir
+  "empieza con 2/3 = móvil" sin chequear ENACOM). A pedido del usuario,
+  **se sacó el parche** y quedó solo el bloque del AGI en su lugar.
+
+Aplicado en ambos macros (`macro-dialout` no tenía nada antes;
+`macro-dialout-discadores` tenía el parche, reemplazado). Mismo flujo que
+Ungar: diff mostrado y aprobado antes de aplicar, backup previo
+(`macros.conf.bak_20260910_171512`), `dialplan reload` sin errores.
+Verificado end-to-end contra `telval` (sin tocar `nexo` para la prueba):
+`3512345678`→`0351152345678`, `1130032202`→`0111530032202`,
+`1143219876`→`01143219876`.
+
+`provider_key="nexo"` hardcodeado igual que `lineip` en Ungar — mismo
+motivo (un solo trunk, `cantTrunk=1` confirmado en todos los llamados de
+`permisos.conf`).
+
 ## Próximos pasos (a cargo del usuario, sesión siguiente — "mañana")
 
 - [ ] **Reemplazar el `provider_key="lineip"` hardcodeado por una tabla

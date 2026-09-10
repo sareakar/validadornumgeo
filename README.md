@@ -219,10 +219,10 @@ El validador acepta **cualquier formato** habitual en bases de datos argentinas:
 | Con 1511 (invertido) | `1511-1300-3220` | AMBA móvil |
 | Interior fijo completo | `3514123456` | Interior (área 351) |
 | Interior fijo con 0 | `03514123456` | Interior (quita 0) |
-| Interior móvil área+15+sub | `0351-15-6551221` | Interior móvil → `3516551221` |
-| Interior móvil área+15+sub | `351-15-6551221` | Interior móvil → `3516551221` |
-| Interior móvil 15+área+sub | `15-351-6551221` | Interior móvil → `3516551221` |
-| Interior móvil 015+área+sub | `015-351-6551221` | Interior móvil → `3516551221` |
+| Interior móvil área+15+sub | `0351-15-4371234` | Interior móvil → `3514371234` |
+| Interior móvil área+15+sub | `351-15-4371234` | Interior móvil → `3514371234` |
+| Interior móvil 15+área+sub | `15-351-4371234` | Interior móvil → `3514371234` |
+| Interior móvil 015+área+sub | `015-351-4371234` | Interior móvil → `3514371234` |
 | Área 4 dig ambigua | `5493832414526` | strip 549 → `3832414526`, ENACOM resuelve área 3832 vs 383 |
 | E.164 con + | `+541130032202` | Sin hint (ENACOM decide) |
 | E.164 móvil | `+5491130032202` | Móvil (hint por 9) |
@@ -559,8 +559,9 @@ La clasificación fijo/móvil se resuelve consultando la base oficial de ENACOM 
 
 | Prioridad | Fuente | Cuándo aplica |
 |-----------|--------|---------------|
-| 1 | Hint de formato (`hint`) | El número vino con `+549`, `549`, prefijo `15`, o `1115` |
-| 2 | Base ENACOM (`enacom_db`) | Se encontró el bloque en el CSV |
+| 1 | Hint E.164 (`hint`) | El número vino con `+549` o `549` explícito — señal deliberada, gana siempre aunque contradiga a ENACOM (puede haber portabilidad que ENACOM todavía no refleje) |
+| 1b | Hint de "15" (`hint`) | El número vino con prefijo `15` o `1115` — **solo gana si ENACOM no tiene el bloque, o si lo tiene y no dice `BASICA`**. Motivo: `15` es exclusivamente convención de móvil en Argentina, así que un `15` sobre un bloque que ENACOM confirma `BASICA` (fijo) es casi seguro un error de carga en el número de origen, no información real — ahí gana ENACOM |
+| 2 | Base ENACOM (`enacom_db`) | Se encontró el bloque en el CSV (y no aplica el punto 1) |
 | 3 | Heurística (`heuristica`) | Bloque no está en ENACOM (base desactualizada) |
 
 La columna `fuente` en la salida indica cuál se usó.

@@ -99,31 +99,38 @@ def _strip(number: str) -> str:
 def _remove_intl_prefix(n: str) -> tuple[str, str | None]:
     """
     Quita prefijos de país y troncal.
-    Retorna (número_limpio, hint) donde hint in ('mobile', None).
+    Retorna (número_limpio, hint) donde hint in ('mobile_intl', None).
+
+    hint='mobile_intl' (no solo 'mobile'): es una señal E.164 explícita y
+    deliberada (alguien codificó el 9 de móvil a propósito), más fuerte
+    que el hint 'mobile' que arma _classify_and_complete a partir de un
+    "15" suelto — por eso este hint SIEMPRE gana sobre ENACOM, mientras
+    que el hint por "15" no (ver validate(), puede ser un error de carga
+    sobre un fijo real). Ver docs/PRUEBA_AGI_LXC1324.md.
 
     Reglas E.164 / WhatsApp para Argentina:
-      +549XXXXXXXXXX  → móvil (hint=mobile)   — el 9 es indicador de móvil en ITU
-      +54XXXXXXXXXX   → sin hint               — puede ser fijo O móvil guardado sin 9
-      549XXXXXXXXXX   → móvil (hint=mobile)    — sin +, mismo criterio
-      54XXXXXXXXXX    → sin hint               — ENACOM decide
+      +549XXXXXXXXXX  → móvil (hint=mobile_intl) — el 9 es indicador de móvil en ITU
+      +54XXXXXXXXXX   → sin hint                  — puede ser fijo O móvil guardado sin 9
+      549XXXXXXXXXX   → móvil (hint=mobile_intl)  — sin +, mismo criterio
+      54XXXXXXXXXX    → sin hint                  — ENACOM decide
       0054[9]XX...    → ídem con 0054
     """
     hint = None
 
     if n.startswith("+"):
-        if n.startswith("+549"):   n, hint = n[4:], "mobile"
+        if n.startswith("+549"):   n, hint = n[4:], "mobile_intl"
         elif n.startswith("+54"):  n = n[3:]          # no hint — ENACOM decide
         else:                      return "", None     # otro país
 
     elif n.startswith("0054"):
         n = n[4:]
-        if n.startswith("9"):  n, hint = n[1:], "mobile"
+        if n.startswith("9"):  n, hint = n[1:], "mobile_intl"
 
     elif n.startswith("549"):
         # 549 + 10 dígitos = 13 chars  →  móvil
         # 549 + algo más corto: quitar 549 y dejar que el árbol maneje
         if len(n) >= 13:
-            n, hint = n[3:], "mobile"
+            n, hint = n[3:], "mobile_intl"
         else:
             n = n[3:]   # sin hint, puede ser interior incompleto
 
@@ -359,8 +366,22 @@ def validate(raw: str, default_area: str | None = None) -> PhoneResult:
 
     area_info = get_area_info(n10)
 
-    if hint:
-        line_type = hint
+    # Dos orígenes de hint, con distinta confianza:
+    #   'mobile_intl' → vino codificado en E.164 (+549/549), señal
+    #                   explícita y deliberada — gana siempre, aunque
+    #                   contradiga a ENACOM (puede haber portabilidad que
+    #                   ENACOM todavía no refleje).
+    #   'mobile'      → vino de un "15" suelto (_classify_and_complete).
+    #                   "15" es EXCLUSIVAMENTE convención de móvil en
+    #                   Argentina, así que un "15" sobre un bloque que
+    #                   ENACOM confirma BASICA (fijo) es casi seguro un
+    #                   error de carga del número de origen, no
+    #                   información real — ahí gana ENACOM.
+    hint_gana = hint == "mobile_intl" or (
+        hint == "mobile" and (ng_rec is None or ng_rec.modalidad != "BASICA")
+    )
+    if hint_gana:
+        line_type = "mobile"
         source    = "hint"
         operador  = ng_rec.operator_short if ng_rec else None
         servicio  = ng_rec.servicio        if ng_rec else None
