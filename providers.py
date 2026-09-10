@@ -210,6 +210,14 @@ PROVIDERS: dict[str, Provider] = {
         notes="E.164",
         template=_TEMPLATE_E164,
     ),
+    "nexo": Provider(
+        name="Nexo (Iplan)",
+        description="Trunk SIP/Iplan de nexo.centraltelefonica.com.ar — no confundir con el provider genérico 'iplan' (formato distinto)",
+        landline_format="fmt_con_0",
+        mobile_format="fmt_con_0_15",
+        notes="Fijo: 0+número nacional. Móvil: 0+área+15+abonado. Mismo formato que personal.",
+        template=_TEMPLATE_SIMPLE,
+    ),
     "lineip": Provider(
         name="LineIP",
         description="Trunk SIP LineIP (piloto Ungar / dycrecupero.centraltelefonica.com.ar)",

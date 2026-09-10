@@ -11,3 +11,7 @@ build/
 .venv/
 venv/
 .claude/
+
+# Config real de clientes (PBX, dialplan) — nunca al repo, este pushea
+# también a un mirror personal en GitHub. Ver docs/PRUEBA_AGI_LXC1324.md.
+client_configs/
