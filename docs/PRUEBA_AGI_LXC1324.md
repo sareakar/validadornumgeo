@@ -472,6 +472,40 @@ Verificado end-to-end contra `telval` (sin tocar `nexo` para la prueba):
 motivo (un solo trunk, `cantTrunk=1` confirmado en todos los llamados de
 `permisos.conf`).
 
+## Bug real encontrado y corregido en producción (2026-09-10) — hint "15" vs ENACOM
+
+Reportado por el usuario probando `nexo` a propósito: `152234513883`
+(fijo real de interior, "15" agregado — probablemente error de carga en
+el número de origen) se dialeaba como **móvil** (`0223154513883`) en vez
+de fijo (`02234513883`).
+
+**Causa** ([validator.py](../validator.py)): el hint (derivado del
+*formato* de entrada — vio un "15") forzaba `line_type="mobile"` sin
+reconciliar con `modalidad` de ENACOM para ese mismo bloque — el
+resultado quedaba internamente inconsistente (`mobile` + `BASICA` a la
+vez, algo que nunca debería pasar).
+
+**Fix**: se distinguen dos orígenes de hint con distinta confianza:
+- `mobile_intl` (`+549`/`549` explícito) — señal deliberada, sigue
+  ganando siempre, incluso contra ENACOM (puede haber portabilidad que
+  ENACOM no refleje todavía). Sin cambios de comportamiento acá.
+- `mobile` (de un "15" suelto) — **solo gana si ENACOM no tiene el
+  bloque, o lo tiene pero no dice `BASICA`**. "15" es exclusivamente
+  convención de móvil en Argentina; un "15" sobre un bloque que ENACOM
+  confirma `BASICA` es casi seguro error de carga, no información real.
+
+De paso se encontró que el número de ejemplo usado en tests y README
+(`6551221`, área 351) resultaba ser, por casualidad, un bloque `BASICA`
+real en ENACOM — mal ejemplo para ilustrar "interior móvil". Reemplazado
+por `4371234` (bloque MPP real verificado) en `tests/test_validator.py`
+y `README.md`.
+
+Commit `d3a8379`, desplegado en `telval.centraltelefonica.com.ar` y
+verificado end-to-end contra el caso exacto reportado: `TELVAL_TIPO`,
+`TELVAL_MODALIDAD`, `TELVAL_DIAL` y `TELVAL_SOURCE` (`enacom_db`, ya no
+`hint`) todos correctos. Afecta a ambos clientes ya en producción
+(Ungar y Nexo) — bug corregido para los dos a la vez, un solo deploy.
+
 ## Próximos pasos (a cargo del usuario, sesión siguiente — "mañana")
 
 - [ ] **Reemplazar el `provider_key="lineip"` hardcodeado por una tabla
