@@ -12,6 +12,11 @@
 > reproducir el mismo cambio en el dialplan de producción del cliente.
 > Cada paso se documenta a medida que se ejecuta, con fecha y resultado.
 
+> **Para integrar un cliente nuevo**, usar el runbook consolidado en
+> [ONBOARDING_CLIENTE.md](ONBOARDING_CLIENTE.md) — este documento es la
+> bitácora narrativa/histórica de cada integración, no un procedimiento
+> paso a paso.
+
 ---
 
 ## Objetivo
