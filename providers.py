@@ -226,6 +226,14 @@ PROVIDERS: dict[str, Provider] = {
         notes="Fijo: 54+códLDN+número. Móvil: 549+códLDN+número. Sin +, sin 0 inicial. Mismo formato que voximplant.",
         template=_TEMPLATE_E164,
     ),
+    "metrotel": Provider(
+        name="Metrotel",
+        description="Trunk SIP Metrotel — formato genérico del carrier, usable por cualquier cliente que lo tenga contratado (no específico de un solo cliente)",
+        landline_format="fmt_con_0",
+        mobile_format="fmt_con_0_15",
+        notes="Fijo: 0+número nacional. Móvil: 0+área+15+abonado. Confirmado con pruebas reales en resermap.centraltelefonica.com.ar (fijo 011XXXXXXXX OK, móvil 01115XXXXXXXX OK, AMBA). Mismo formato que nexo/personal.",
+        template=_TEMPLATE_SIMPLE,
+    ),
 
     # ── Discadores (dialers) ──────────────────────────────────────────────────
 
