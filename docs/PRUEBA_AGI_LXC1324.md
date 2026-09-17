@@ -506,14 +506,122 @@ verificado end-to-end contra el caso exacto reportado: `TELVAL_TIPO`,
 `hint`) todos correctos. Afecta a ambos clientes ya en producción
 (Ungar y Nexo) — bug corregido para los dos a la vez, un solo deploy.
 
-## Próximos pasos (a cargo del usuario, sesión siguiente — "mañana")
+## Tercer cliente — Resermap (2026-09-17)
 
-- [ ] **Reemplazar el `provider_key="lineip"` hardcodeado por una tabla
-      MySQL** (proveedor + key), en vez de AstDB — decisión del usuario,
-      dado que "todo el sistema está en MySQL". Sigue pendiente ubicar el
-      paso que sincroniza esa tabla hacia AstDB (no encontrado en
-      `ProveedoresIP/ABM.php`/`Cuerpo.php` — ver conversación del
-      2026-09-01) antes de agregarle una columna nueva.
+`resermap.centraltelefonica.com.ar` — AsterVoIP, Debian 8, Asterisk
+13.13 (más viejo que dycrecupero/nexo). Detalle completo en
+`client_configs/resermap/README.md` (local, gitignored). Resumen:
+
+- **Dos trunks**: `SIP/Metrotel` (Argentina, en alcance) y `SIP/FonoIP`
+  (rutas a Chile, confirmado por el usuario, fuera de alcance).
+- **Sin sudo para `soporte`** en este cliente, y sin acceso SSH directo
+  como `root` — a pedido explícito del usuario no se tocó sudoers.
+  Automatizar `su -c "..." root` por SSH falló en este box específico
+  (PAM pide tty real incluso forzando pty vía `script`, no investigado a
+  fondo). Se resolvió con flujo colaborativo: el usuario corre los
+  comandos desde su propia sesión `su -` y pega el output.
+- **Formato de Metrotel confirmado con llamadas reales** (dialplan de
+  prueba que pasa el número sin transformar): móvil AMBA
+  `15XXXXXXXX`/`1115XXXXXXXX`/`01115XXXXXXXX` OK, fijo AMBA
+  `XXXXXXXX`/`11XXXXXXXX`/`011XXXXXXXX` OK. `01115...`/`011...` son
+  exactamente `fmt_con_0_15`/`fmt_con_0` — mismo formato que `nexo`. Se
+  agregó un provider **genérico** `metrotel` a `providers.py` (no atado
+  a este cliente).
+- **Bug real, mismo patrón que Nexo**: `permisos.conf` arma el `Dial()`
+  de móvil interior sin insertar el `15` (mismo `Prefix=0` que fijo
+  interior). Confirmado localmente con `validate()` (ENACOM reclasifica
+  `MPP` y corrige el `15` sin importar que no viniera en el input) y
+  luego **en producción**: el usuario marcó a propósito un móvil de
+  interior en el formato viejo/sin `15` después de aplicar el cambio —
+  telval lo corrigió, la llamada progresó normal.
+- **Arquitectura nueva — provider_key dinámico vía MySQL** (reemplaza el
+  patrón hardcodeado usado en dycrecupero/nexo, ver "Próximos pasos"
+  abajo): el mismo `macro-dialout`/`macro-dialout-discadores` sirve a
+  Metrotel y FonoIP, así que hardcodear un `provider_key` en el texto
+  del dialplan habría sido incorrecto (corrompería Chile). Se resolvió
+  con:
+  - `asterisk.id_proveedor` (MySQL) — tabla origen de metadata de
+    trunks ya existente (`name`, `chanisavail`, `activo`, `ocupado` —
+    estos últimos se reflejan en AstDB `chanIsAvail`/`troncalActivo`/
+    `troncalOcupado`), se le agregó `telval_provider VARCHAR(40) NOT
+    NULL DEFAULT ''` (ver `client_configs/resermap/migration.sql`).
+    Default vacío = trunk sin asignar → el dialplan no consulta telval,
+    sigue directo al `Dial()` de siempre.
+  - `/var/lib/asterisk/agi-bin/pbx-ip/telvalTrunkProvider.agi` — script
+    **Perl** nuevo (AsterVoIP es todo Perl/PHP, no Python — se adaptó
+    el lenguaje respecto a los scripts anteriores). Sigue el mismo
+    patrón que los `.agi` ya existentes en esta plataforma
+    (`claveRuta.agi`): usa `Asterisk::AGI` + `DBI`, reutiliza el helper
+    de conexión ya existente del panel (`dataDB::dameConfig()`) para no
+    tener que ver ni hardcodear la password de MySQL. Recibe `${Trunk}`,
+    le saca el prefijo `SIP/`/`IAX2/`, busca `telval_provider` en
+    `id_proveedor` por `name`, setea `TelvalProvider` en el canal.
+  - El dialplan llama primero a este AGI local (rápido, misma red) y
+    solo si devuelve un provider no vacío llama al AGI remoto de telval
+    — doble fallback seguro (sin provider → salta; provider pero
+    `TELVAL_DIAL` vacío → también salta). Cualquier trunk nuevo, de
+    cualquier cliente que comparta esta plantilla de tabla, se habilita
+    con un solo `UPDATE`, sin tocar dialplan nunca más.
+- **Input a telval: `${Prefix}${Numero}`, no `${NumeroReal}`** (a
+  diferencia del diseño de dycrecupero/nexo). Encontrado *antes* de
+  aplicar nada, probando localmente: el patrón de atajo local
+  `_8XXXXXX.` (marcado manual de agentes) deja `${NumeroReal}` con el
+  dígito de ruteo `8` todavía pegado (ej. `81234567`), y el validador lo
+  toma como un abonado válido de área 11 en vez de descartarlo —
+  hubiera corrompido el marcado manual interno. `${Prefix}${Numero}` es
+  el número que `permisos.conf` ya arma hoy por patrón (con el dígito de
+  ruteo ya recortado), así que no tiene ese problema.
+- **Aplicado en 3 pasos**, cada uno con backup previo y diff mostrado
+  antes de la siguiente: (1) solo el lookup + `NoOp` logueando
+  `TelvalProvider` en `macro-dialout`, verificado con llamada real antes
+  de habilitar nada; (2) validación completa en `macro-dialout`; (3)
+  mismo bloque en `macro-dialout-discadores`. Scripts de reemplazo en
+  **Perl** (no Python, este box no lo tiene) con la misma lógica de
+  "contar ocurrencias del ancla, abortar si no es exactamente 1" usada
+  en dycrecupero/nexo.
+
+### Hallazgo lateral: telval en producción corría desde otra branch
+
+Al ir a deployar el provider `metrotel`, se encontró que
+`docs.astervoip.com.ar` tenía el repo en `feat/web-ui`, no `main`. Para
+no arriesgar nada se aplicó un `git cherry-pick` puntual del commit de
+`metrotel` sobre `feat/web-ui` (la branch realmente corriendo), sin
+cambiar de branch ni forzar merge.
+
+**Corrección**: el diagnóstico inicial ("a `main` le faltan `nexo` y
+`lineip`") fue un error de comparación — se comparó `feat/web-ui` contra
+la branch `main` **local del propio server**, que nunca se había
+actualizado (`git pull`) desde un commit muy viejo. Repitiendo la
+comparación después de `git fetch`, contra `origin/main` (el remoto
+real), la diferencia es solo un commit de documentación
+(`05c077b`, sin cambios de código) que existe en `main` pero no se
+había cherry-pickeado a `feat/web-ui` — nada de `providers.py` ni de
+código real. No hay divergencia sustantiva entre las branches; sigue
+pendiente, de todos modos, entender por qué el server quedó en
+`feat/web-ui` en vez de `main` y prolijamente unificar a una sola branch
+de despliegue.
+
+## Próximos pasos
+
+- [x] ~~Reemplazar el `provider_key` hardcodeado por una tabla MySQL~~ —
+      resuelto en Resermap (ver arriba): tabla `id_proveedor` +
+      `telvalTrunkProvider.agi`. El mecanismo de sync MySQL→AstDB del
+      panel (buscado sin éxito en dycrecupero, `ABM.php`/`Cuerpo.php`)
+      terminó siendo irrelevante — el diseño final consulta MySQL
+      directo desde un AGI local, sin pasar por AstDB en absoluto.
+- [ ] **Migrar dycrecupero y nexo al mismo mecanismo dinámico** (tabla +
+      `telvalTrunkProvider.agi`) en vez del `provider_key` hardcodeado
+      actual — pedido explícito del usuario, ritmo y prioridad a
+      definir. Para cada uno: confirmar si `soporte` tiene sudo (sí en
+      ambos, a diferencia de Resermap), ubicar su tabla de trunks en
+      MySQL (puede no llamarse `id_proveedor`), agregar la columna,
+      instalar el script si no está ya (puede venir de la misma
+      plantilla AsterVoIP), reemplazar el bloque hardcodeado.
+- [ ] **Unificar a una sola branch de despliegue** en
+      `docs.astervoip.com.ar` — corre `feat/web-ui` en vez de `main` (ver
+      hallazgo arriba); no hay divergencia de código real entre ambas,
+      pero conviene prolijamente pasar a `main` y no seguir cherry-
+      pickeando puntualmente a `feat/web-ui` en cada deploy.
 - [ ] **Revisión de rutas** — el usuario reporta "una ensalada importante,
       incluso rutas mal configuradas" en el enrutamiento saliente de
       Ungar (más allá de lo tocado en este piloto). Alcance y prioridad a

@@ -1,0 +1,13 @@
+-- Plantilla de la migración aplicada por primera vez en
+-- resermap.centraltelefonica.com.ar (2026-09-17). Ajustar nombre de DB,
+-- tabla y columna de nombre de trunk según lo que exista en cada
+-- cliente (buscar con `show tables like '%prove%'` / `'%trunk%'` /
+-- `'%sip%'` en la DB `asterisk`). Ver docs/PRUEBA_AGI_LXC1324.md.
+--
+-- Default '' = sin provider asignado -> el dialplan no consulta telval
+-- para ese trunk, sigue directo al Dial() de siempre (fallback seguro).
+
+ALTER TABLE id_proveedor ADD COLUMN telval_provider VARCHAR(40) NOT NULL DEFAULT '';
+
+-- Un UPDATE por cada trunk a habilitar, usando una key de providers.py:
+-- UPDATE id_proveedor SET telval_provider='<provider_key>' WHERE name='<NombreDelTrunk>';

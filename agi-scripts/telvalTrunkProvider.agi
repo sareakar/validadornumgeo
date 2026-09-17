@@ -1,0 +1,60 @@
+#!/usr/bin/perl
+
+use lib("/var/www/pbx/Phps/Comunes");
+use dataDB;
+use Asterisk::AGI;
+use DBI;
+
+# Busca el provider_key de telval para un trunk, consultando una tabla
+# MySQL local del cliente (no AstDB) -- diseño para AsterVoIP, donde la
+# metadata real de trunks vive en MySQL. Ver docs/PRUEBA_AGI_LXC1324.md,
+# seccion "Tercer cliente - Resermap", y client_configs/<cliente>/README.md
+# para el detalle de por que MySQL y no AstDB.
+#
+# Este script asume el esquema encontrado en resermap.centraltelefonica
+# .com.ar: DB "asterisk", tabla "id_proveedor", columna "name" con el
+# nombre de trunk sin el prefijo SIP/IAX2 (ej. "Metrotel"), columna
+# "telval_provider" agregada para este proposito (ver migration.sql en
+# la carpeta client_configs del cliente). En otro cliente la tabla puede
+# tener otro nombre -- ajustar el SELECT antes de reusar.
+#
+# Reutiliza el helper de conexion a MySQL que ya usan los demas .agi de
+# esta plataforma (ej. pbx-ip/claveRuta.agi) para no tener que ver ni
+# hardcodear la password.
+#
+# Si no hay fila para ese trunk, no hay conexion a MySQL, o la columna
+# esta vacia -> devuelve "" y el dialplan sigue directo al Dial() de
+# siempre (fallback seguro, nunca bloquea una llamada).
+#
+# Recibe: ${ARG1} = Trunk tal cual lo tiene el dialplan (ej "SIP/Metrotel").
+# Devuelve: variable de canal TelvalProvider (puede ser "").
+
+my %config = dameConfig();
+
+my $AGI = new Asterisk::AGI;
+my %input = $AGI->ReadParse();
+
+my ($trunk) = $ARGV[0];
+my $name = $trunk;
+$name =~ s{^SIP/}{};
+$name =~ s{^IAX2/}{};
+
+my $provider = "";
+
+my $dbh = DBI->connect(
+    'DBI:mysql:asterisk:' . $config{MySQLHost} . ':' . $config{MySQLPort},
+    $config{MySQLUser},
+    $config{MySQLPass},
+    { RaiseError => 0, PrintError => 0 }
+);
+
+if ($dbh) {
+    my $sth = $dbh->prepare("SELECT telval_provider FROM id_proveedor WHERE name = ?");
+    if ($sth->execute($name)) {
+        my @r = $sth->fetchrow_array();
+        $provider = $r[0] if @r;
+    }
+    $dbh->disconnect;
+}
+
+$AGI->set_variable('TelvalProvider', $provider);
