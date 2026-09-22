@@ -26,11 +26,15 @@ Uso en dialplan:
   ; TELVAL_ERROR      formato_invalido|numero_invalido|...
   ; TELVAL_SOURCE     ENACOM|enacom_db|heuristica|hint
   ;
-  ; Solo si se pasó provider_key (agi_arg_3):
+  ; Si se pasó provider_key (agi_arg_3), modo "slim" -- SOLO estas 3
+  ; variables (no las de arriba, ver build_vars() para el motivo:
+  ; menos variables = menos round-trips TCP, importa con clientes en
+  ; otro datacenter):
   ; TELVAL_DIAL        string completo listo para Dial() = prefix + formato
   ;                    del proveedor (ej. "" + "01130032202"). Vacío si el
   ;                    número es inválido o el provider_key no existe.
   ; TELVAL_DIAL_ERROR  "" | "numero_invalido" | "provider_desconocido"
+  ; TELVAL_MODALIDAD   CPP|MPP|BASICA|  (para logging/reporting)
 
 Ejemplo de uso completo en dialplan (extensions.conf):
   exten => _X.,1,AGI(agi://localhost:4573/validate,${EXTEN})
@@ -141,7 +145,22 @@ def build_vars(r, provider_key: str = "", prefix: str = "") -> dict:
     Arma el diccionario de variables TELVAL_* a partir de un PhoneResult.
     Función de módulo (no método) para poder testearla sin levantar un
     socket real.
+
+    Con provider_key: modo "slim", solo 3 variables (TELVAL_DIAL,
+    TELVAL_DIAL_ERROR, TELVAL_MODALIDAD) -- es lo único que consume el
+    dialplan cuando pide el string ya armado para Dial(). Cada variable
+    es un round-trip TCP bloqueante; con clientes en otro datacenter
+    (~170ms de RTT medido en dyktel.centraltelefonica.com.ar) las 16
+    variables del modo completo sumaban ~2.7s de demora real en el
+    Dial(). Sin provider_key (modo "crudo", pensado para dialplans que
+    arman el string ellos mismos) se mantienen las 14 variables de
+    siempre, sin cambios -- retrocompatible.
     """
+    if provider_key:
+        dial = _dial_vars(r, provider_key, prefix)
+        dial["TELVAL_MODALIDAD"] = r.modalidad or "" if r.valid else ""
+        return dial
+
     if r.valid:
         is_cpp = r.modalidad in ("CPP", "MPP")
         v = {
@@ -177,11 +196,6 @@ def build_vars(r, provider_key: str = "", prefix: str = "") -> dict:
             "TELVAL_SOURCE":    "",
             "TELVAL_ERROR":     r.error or "error_desconocido",
         }
-
-    # provider_key es opcional — si no vino, comportamiento idéntico al
-    # de antes (retrocompatible con dialplans que no lo usan).
-    if provider_key:
-        v.update(_dial_vars(r, provider_key, prefix))
 
     return v
 

@@ -52,6 +52,14 @@ v = build_vars(r, provider_key="movistar")
 check("TELVAL_DIAL = fmt_e164_movil", v["TELVAL_DIAL"] == r.formats["fmt_e164_movil"],
       f"got: {v.get('TELVAL_DIAL')}")
 check("TELVAL_DIAL_ERROR vacío", v["TELVAL_DIAL_ERROR"] == "")
+check("TELVAL_MODALIDAD = CPP", v["TELVAL_MODALIDAD"] == "CPP", f"got: {v.get('TELVAL_MODALIDAD')}")
+
+section("Con provider_key — modo slim (solo 3 variables, no 16)")
+
+check("exactamente 3 keys", set(v.keys()) == {"TELVAL_DIAL", "TELVAL_DIAL_ERROR", "TELVAL_MODALIDAD"},
+      f"got: {sorted(v.keys())}")
+check("sin TELVAL_VALID (no se manda en modo slim)", "TELVAL_VALID" not in v)
+check("sin TELVAL_10DIG (no se manda en modo slim)", "TELVAL_10DIG" not in v)
 
 # ─── Con provider_key — fijo ───────────────────────────────────────────────────
 
@@ -87,9 +95,9 @@ section("Número inválido con provider_key")
 
 r_inv = validate("123")
 v = build_vars(r_inv, provider_key="movistar")
-check("TELVAL_VALID = 0", v["TELVAL_VALID"] == "0")
 check("TELVAL_DIAL vacío", v["TELVAL_DIAL"] == "")
 check("TELVAL_DIAL_ERROR = numero_invalido", v["TELVAL_DIAL_ERROR"] == "numero_invalido")
+check("TELVAL_MODALIDAD vacío (inválido)", v["TELVAL_MODALIDAD"] == "")
 
 # ─── Resultado final ────────────────────────────────────────────────────────
 

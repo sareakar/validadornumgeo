@@ -404,10 +404,19 @@ AGI(agi://127.0.0.1:4573/validate,${NUMERO},${AREA},${PROVIDER_KEY},${PREFIX})
 - `provider_key` *(opcional)* — una clave de [providers.py](providers.py) (`movistar`, `personal`, `claro`, ...). Si se omite, el AGI se comporta exactamente igual que sin esta extensión (retrocompatible).
 - `prefix` *(opcional)* — string que se antepone literal al formato resuelto (ej. un código de acceso del trunk). Vacío si no aplica.
 
+**Modo "slim"**: cuando se pasa `provider_key`, el AGI manda **solo estas 3
+variables** (no las ~14 del modo sin `provider_key`) — es lo único que un
+dialplan que pide el string listo para `Dial()` termina usando, y cada
+variable de menos es un round-trip TCP de menos. Con un cliente en el mismo
+datacenter esto es imperceptible, pero con uno en otro datacenter (~170ms de
+RTT medido con un cliente real) las ~14 variables de más sumaban casi 2
+segundos de demora real en el `Dial()`.
+
 | Variable | Valores | Descripción |
 |----------|---------|--------------|
 | `TELVAL_DIAL` | ej. `01130032202` | `prefix` + formato correcto para `provider_key`, listo para `Dial()`. Vacío si el número es inválido o `provider_key` no existe. |
 | `TELVAL_DIAL_ERROR` | `` / `numero_invalido` / `provider_desconocido` | Motivo si `TELVAL_DIAL` vino vacío. |
+| `TELVAL_MODALIDAD` | `CPP` / `MPP` / `BASICA` / `` | Para logging/reporting (ej. `CDR(userfield)`) — no hace falta parsear `TELVAL_DIAL` para saber si fue fijo o móvil. |
 
 **Por qué `provider_key` y no el nombre del trunk**: el nombre de un trunk es arbitrario por cliente (cada uno le puede poner el nombre que quiera), así que el AGI nunca intenta adivinar el proveedor a partir de ese nombre. Quien da de alta el trunk decide una vez qué `provider_key` le corresponde y se lo pasa explícito — sin tablas de mapeo por cliente que mantener. Diseño completo y casos reales en [docs/PRUEBA_AGI_LXC1324.md](docs/PRUEBA_AGI_LXC1324.md).
 
