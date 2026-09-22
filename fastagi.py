@@ -110,9 +110,10 @@ class AGIHandler(socketserver.StreamRequestHandler):
         # ── Validar ───────────────────────────────────────────────
         r = validate(number, default_area=default_area)
 
-        # ── Enviar variables al canal (pipelined) ──────────────────
+        # ── Enviar variables al canal ─────────────────────────────
         vars_to_set = build_vars(r, provider_key, prefix)
-        self._set_vars(vars_to_set)
+        for name, value in vars_to_set.items():
+            self._set_var(name, value)
 
         # ── Retornar resultado a Asterisk ─────────────────────────
         self._send("VERBOSE \"TELVAL: %s → %s %s [%s]\" 1" % (
@@ -122,22 +123,12 @@ class AGIHandler(socketserver.StreamRequestHandler):
             r.source,
         ))
 
-    def _set_vars(self, vars_to_set: dict):
-        # Pipelined: manda todos los SET VARIABLE en un solo write y recién
-        # después lee los acks ("200 result=1"), uno por variable. Con la
-        # variante secuencial (un write+flush+readline por variable) cada
-        # SET VARIABLE paga el RTT completo de la conexión -- invisible en
-        # el mismo datacenter (~5ms), pero con un cliente en otro
-        # datacenter (~170ms RTT medido en dyktel.centraltelefonica.com.ar)
-        # y ~16 variables por llamada, eso son ~2.7s de demora en el Dial(),
-        # medido en producción. Pipelinear reduce esos 16 RTT a ~1.
-        cmds = "".join(
-            f'SET VARIABLE {name} "{value}"\n' for name, value in vars_to_set.items()
-        )
-        self.wfile.write(cmds.encode("utf-8"))
+    def _set_var(self, name: str, value: str):
+        cmd = f'SET VARIABLE {name} "{value}"\n'
+        self.wfile.write(cmd.encode("utf-8"))
         self.wfile.flush()
-        for _ in vars_to_set:
-            self.rfile.readline()
+        # Leer respuesta "200 result=1"
+        self.rfile.readline()
 
     def _send(self, cmd: str):
         self.wfile.write((cmd + "\n").encode("utf-8"))
