@@ -13,10 +13,18 @@ use DBI;
 #
 # Este script asume el esquema encontrado en resermap.centraltelefonica
 # .com.ar: DB "asterisk", tabla "id_proveedor", columna "name" con el
-# nombre de trunk sin el prefijo SIP/IAX2 (ej. "Metrotel"), columna
-# "telval_provider" agregada para este proposito (ver migration.sql en
-# la carpeta client_configs del cliente). En otro cliente la tabla puede
-# tener otro nombre -- ajustar el SELECT antes de reusar.
+# nombre de trunk sin el prefijo SIP/IAX2 (ej. "Metrotel"), columnas
+# "telval_provider" y "telval_provider_prefix" agregadas para este
+# proposito (ver migration.sql en la carpeta client_configs del
+# cliente). En otro cliente la tabla puede tener otro nombre -- ajustar
+# el SELECT antes de reusar, pero mantener ambas columnas en todos los
+# clientes que usen este script (mismo esquema en todos lados).
+#
+# "telval_provider_prefix" es para troncales tipo wholesale (ej. IPlan/
+# IPlanManual en dyktel.centraltelefonica.com.ar) que necesitan un
+# codigo de acceso fijo antepuesto al numero formateado -- se pasa como
+# agi_arg_4 (prefix) al validar. Vacio en la mayoria de los troncales
+# (formato estandar, sin codigo de acceso).
 #
 # Reutiliza el helper de conexion a MySQL que ya usan los demas .agi de
 # esta plataforma (ej. pbx-ip/claveRuta.agi) para no tener que ver ni
@@ -27,7 +35,8 @@ use DBI;
 # siempre (fallback seguro, nunca bloquea una llamada).
 #
 # Recibe: ${ARG1} = Trunk tal cual lo tiene el dialplan (ej "SIP/Metrotel").
-# Devuelve: variable de canal TelvalProvider (puede ser "").
+# Devuelve: variables de canal TelvalProvider y TelvalProviderPrefix
+# (pueden ser "").
 
 my %config = dameConfig();
 
@@ -40,6 +49,7 @@ $name =~ s{^SIP/}{};
 $name =~ s{^IAX2/}{};
 
 my $provider = "";
+my $prefix   = "";
 
 my $dbh = DBI->connect(
     'DBI:mysql:asterisk:' . $config{MySQLHost} . ':' . $config{MySQLPort},
@@ -49,12 +59,17 @@ my $dbh = DBI->connect(
 );
 
 if ($dbh) {
-    my $sth = $dbh->prepare("SELECT telval_provider FROM id_proveedor WHERE name = ?");
+    my $sth = $dbh->prepare("SELECT telval_provider, telval_provider_prefix FROM id_proveedor WHERE name = ?");
     if ($sth->execute($name)) {
         my @r = $sth->fetchrow_array();
-        $provider = $r[0] if @r;
+        if (@r) {
+            $provider = $r[0] // "";
+            $prefix   = $r[1] // "";
+        }
     }
+    $sth->finish;
     $dbh->disconnect;
 }
 
 $AGI->set_variable('TelvalProvider', $provider);
+$AGI->set_variable('TelvalProviderPrefix', $prefix);

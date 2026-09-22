@@ -89,10 +89,12 @@ trunk sin `SIP/`, y ya tenía columnas reflejadas en AstDB —
 `chanisavail`, `activo`, `ocupado` — buena señal de que es la tabla
 correcta). Puede tener otro nombre en otro cliente.
 
-### 3.3 Agregar la columna
+### 3.3 Agregar las columnas
 
 ```sql
-ALTER TABLE <tabla> ADD COLUMN telval_provider VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE <tabla>
+  ADD COLUMN telval_provider VARCHAR(40) NOT NULL DEFAULT '',
+  ADD COLUMN telval_provider_prefix VARCHAR(20) NOT NULL DEFAULT '';
 UPDATE <tabla> SET telval_provider='<provider_key>' WHERE name='<NombreTrunk>';
 ```
 
@@ -100,6 +102,24 @@ Plantilla en [`agi-scripts/migration.sql.example`](../agi-scripts/migration.sql.
 Default `''` = trunk sin asignar → el dialplan no consulta telval para
 ese trunk, sigue directo al `Dial()` de siempre. Dejar sin asignar
 cualquier trunk fuera de alcance (ej. rutas a otro país).
+
+**Agregar siempre las dos columnas**, aunque el cliente no tenga
+troncales wholesale — el script del paso 3.4 asume ambas presentes en
+cualquier cliente que lo use, para no mantener variantes del script.
+`telval_provider_prefix` es para el caso encontrado en
+`dyktel.centraltelefonica.com.ar`: troncales wholesale (`IPlan`,
+`IPlanManual`) que necesitan un **código de acceso fijo** antepuesto al
+número ya formateado (ej. `2800288` + `01143219876`) — no es lo mismo
+que el `Prefix` de `permisos.conf` (que es parte del número, tipo
+`0`/`15`). Se pasa como `agi_arg_4` (`prefix` de la AGI, ver 3.5) y
+**no** se limpia el `Prefix` original del dialplan en ese caso — ver el
+bloque condicional en 3.5. Antes de asumir que un trunk lo necesita,
+confirmarlo mirando `permisos.conf`: si el mismo "prefijo" cambia de
+tamaño según el patrón de extensión (7, 8, 10, 12+ dígitos) en vez de
+ser siempre `""`/`"0"`/`"15"`, es señal de código de acceso, no de
+formato — ver la investigación completa en la bitácora
+([PRUEBA_AGI_LXC1324.md](PRUEBA_AGI_LXC1324.md), sección "Cuarto
+cliente — Dyktel").
 
 ### 3.4 Instalar el script de lookup
 
@@ -126,6 +146,9 @@ Justo antes de cada `Dial(${Trunk}/${Prefix}${Numero},...)`
 (`macro-dialout` y `macro-dialout-discadores`, label distinto en cada
 uno):
 
+**Caso estándar** (sin código de acceso — `telval_provider_prefix` vacío,
+la mayoría de los trunks):
+
 ```
 same => n,AGI(pbx-ip/telvalTrunkProvider.agi,${Trunk})
 same => n,GotoIf($["${TelvalProvider}" = ""]?telval_skip_dialout)
@@ -136,6 +159,31 @@ same => n,Set(Prefix=)
 same => n,Set(Numero=${TELVAL_DIAL})
 same => n(telval_skip_dialout),Dial(${Trunk}/${Prefix}${Numero},${Tods},${Ods}M(${macroCRM}))
 ```
+
+**Caso con código de acceso wholesale** (`telval_provider_prefix` no
+vacío — ej. `IPlan`/`IPlanManual` en Dyktel): input a telval es
+`${Numero}` solo (no `${Prefix}${Numero}` — el `Prefix` original *es*
+el código de acceso, no forma parte del número), y el `Prefix` original
+**se conserva**, no se pisa:
+
+```
+same => n,AGI(pbx-ip/telvalTrunkProvider.agi,${Trunk})
+same => n,GotoIf($["${TelvalProvider}" = ""]?telval_skip_dialout)
+same => n,AGI(agi://telval.centraltelefonica.com.ar:4573/validate,${Numero},11,${TelvalProvider},${TelvalProviderPrefix})
+same => n,GotoIf($["${TELVAL_DIAL}" = ""]?telval_skip_dialout)
+same => n,Verbose(1,TELVAL: ${Numero} -> ${TELVAL_DIAL} [${TELVAL_GEO} ${TELVAL_TIPO} ${TELVAL_MODALIDAD}])
+same => n,Set(Numero=${TELVAL_DIAL})
+same => n(telval_skip_dialout),Dial(${Trunk}/${Prefix}${Numero},${Tods},${Ods}M(${macroCRM}))
+```
+
+Notar que acá `${TelvalProviderPrefix}` se pasa como **`agi_arg_4`**
+(`prefix` de la propia AGI de telval, ya soportado desde el diseño
+original de `fastagi.py` — `TELVAL_DIAL = prefix + formato`), y el
+`${Prefix}` del dialplan (el código de acceso real, ej. `2800288`) se
+dispara sin modificar en el `Dial()` final. Dos "prefix" distintos, no
+confundir: uno es del dialplan/MySQL (código de acceso, texto plano),
+el otro es el argumento de telval (se antepone al número ya
+formateado).
 
 **Usar `${Prefix}${Numero}` como input, no `${NumeroReal}`** — salvo que
 se confirme que no hay patrones de atajo local (tipo `_8XXXXXX.` en
