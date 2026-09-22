@@ -234,6 +234,14 @@ PROVIDERS: dict[str, Provider] = {
         notes="Fijo: 0+número nacional. Móvil: 0+área+15+abonado. Confirmado con pruebas reales en resermap.centraltelefonica.com.ar (fijo 011XXXXXXXX OK, móvil 01115XXXXXXXX OK, AMBA). Mismo formato que nexo/personal.",
         template=_TEMPLATE_SIMPLE,
     ),
+    "anura": Provider(
+        name="Anura",
+        description="Trunk SIP Anura (iptrunk.grancentral.com.ar) — mismo formato que metrotel",
+        landline_format="fmt_con_0",
+        mobile_format="fmt_con_0_15",
+        notes="Confirmado con pruebas reales en dyktel.centraltelefonica.com.ar: fijo 0+nacional OK (AMBA y interior), móvil 0+área+15+abonado OK (AMBA y interior).",
+        template=_TEMPLATE_SIMPLE,
+    ),
 
     # ── Discadores (dialers) ──────────────────────────────────────────────────
 
