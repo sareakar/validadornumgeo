@@ -61,6 +61,7 @@ Para servidor externo, simplemente cambiar la IP:
   AGI(agi://192.168.1.100:4573/validate,${EXTEN})
 """
 
+import socket
 import socketserver
 import threading
 import logging
@@ -77,11 +78,29 @@ logger = logging.getLogger("fastagi")
 class AGIHandler(socketserver.StreamRequestHandler):
     """Maneja una conexión FastAGI (un llamado)."""
 
+    # Sin timeout, un read()/write() que se cuelga (blip de red, cliente
+    # que deja de leer, etc.) bloquea el hilo para siempre -- y del lado
+    # de Asterisk, ese AGI() nunca vuelve, así que la llamada se pierde
+    # esperando una respuesta que no llega (reportado con
+    # dyktel.centraltelefonica.com.ar, otro datacenter, 2026-09-25). Con
+    # el timeout, si algo se cuelga la conexión se corta y Asterisk ve
+    # el AGI como fallido -- TELVAL_DIAL queda sin setear y el dialplan
+    # sigue con el fallback normal (Prefix/Numero originales), no se
+    # pierde la llamada. 5s da margen de sobra sobre los ~1s que tarda
+    # hoy el caso mas lento medido (Dyktel, modo slim).
+    SOCKET_TIMEOUT = 5
+
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(self.SOCKET_TIMEOUT)
+
     def handle(self):
         try:
             self._run()
         except (BrokenPipeError, ConnectionResetError):
             pass
+        except (socket.timeout, TimeoutError):
+            logger.warning("AGI handler: timeout (%ss) con %s", self.SOCKET_TIMEOUT, self.client_address)
         except Exception as e:
             logger.exception("Error en AGI handler: %s", e)
 
