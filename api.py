@@ -65,7 +65,7 @@ def _result_to_json(r, provider: str | None = None) -> dict:
         "formats":    r.formats if r.valid else {},
     }
     if provider and r.valid:
-        d["fmt_provider"] = format_for_provider(r.formats, r.line_type, provider)
+        d["fmt_provider"] = format_for_provider(r.formats, r.line_type, provider, r.geografia)
     return d
 
 

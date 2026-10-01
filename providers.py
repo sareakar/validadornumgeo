@@ -129,6 +129,14 @@ class Provider:
     mobile_format: str           # key de PhoneResult.formats
     notes: str = ""
     template: OutputTemplate = field(default_factory=lambda: OutputTemplate())
+    # Override opcional de landline_format solo para AMBA (geografia=="AMBA").
+    # None (default) = sin override, usa landline_format siempre como
+    # cualquier otro provider -- no cambia nada para los que ya existen.
+    # Caso real: DAINUS (medimas.centraltelefonica.com.ar) rechaza
+    # 0+11+abonado para fijo de AMBA con SIP 404 (confirmado con
+    # sip set debug), solo acepta el abonado local sin área -- pero sí
+    # acepta 0+área+abonado normal para fijo de interior.
+    landline_format_amba: str | None = None
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -242,6 +250,18 @@ PROVIDERS: dict[str, Provider] = {
         notes="Confirmado con pruebas reales en dyktel.centraltelefonica.com.ar: fijo 0+nacional OK (AMBA y interior), móvil 0+área+15+abonado OK (AMBA y interior).",
         template=_TEMPLATE_SIMPLE,
     ),
+    "dainus": Provider(
+        name="Dainus",
+        description="Trunk SIP Dainus (sip.serverdainus.net)",
+        landline_format="fmt_con_0",
+        landline_format_amba="fmt_local_sin_area",
+        mobile_format="fmt_con_0_15",
+        notes="Confirmado con pruebas reales (sip set debug) en medimas.centraltelefonica.com.ar: "
+              "fijo AMBA SOLO acepta abonado local sin área (0+11+abonado da SIP 404) — caso distinto "
+              "a metrotel/anura/nexo. Fijo interior 0+área+abonado OK. Móvil (AMBA e interior) "
+              "0+área+15+abonado OK.",
+        template=_TEMPLATE_SIMPLE,
+    ),
 
     # ── Discadores (dialers) ──────────────────────────────────────────────────
 
@@ -313,9 +333,16 @@ def get_provider(key: str) -> Provider | None:
     return PROVIDERS.get(key.lower())
 
 
-def format_for_provider(formats: dict, line_type: str, provider_key: str) -> str | None:
+def format_for_provider(
+    formats: dict, line_type: str, provider_key: str, geografia: str | None = None
+) -> str | None:
     provider = get_provider(provider_key)
     if not provider:
         return None
-    fmt_key = provider.mobile_format if line_type == "mobile" else provider.landline_format
+    if line_type == "mobile":
+        fmt_key = provider.mobile_format
+    else:
+        fmt_key = provider.landline_format
+        if geografia == "AMBA" and provider.landline_format_amba:
+            fmt_key = provider.landline_format_amba
     return formats.get(fmt_key)

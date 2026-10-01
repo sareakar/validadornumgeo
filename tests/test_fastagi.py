@@ -71,6 +71,37 @@ check("TELVAL_DIAL = fmt_con_0", v["TELVAL_DIAL"] == r.formats["fmt_con_0"],
       f"got: {v.get('TELVAL_DIAL')}")
 check("TELVAL_DIAL_ERROR vacío", v["TELVAL_DIAL_ERROR"] == "")
 
+# ─── provider con landline_format_amba (dainus) ────────────────────────────────
+
+section("provider con landline_format_amba — dainus (AMBA vs interior)")
+
+# Fijo AMBA: dainus rechaza 0+11+abonado (SIP 404 confirmado en
+# medimas.centraltelefonica.com.ar), solo acepta el abonado local sin
+# área -- landline_format_amba lo cubre.
+r = validate("1163296500")  # fijo BA
+v = build_vars(r, provider_key="dainus")
+check("fijo AMBA (dainus) → abonado sin área", v["TELVAL_DIAL"] == "63296500",
+      f"got: {v.get('TELVAL_DIAL')}")
+
+# Fijo interior: dainus sí acepta 0+área+abonado normal (fmt_con_0).
+r = validate("02234105000")  # fijo Mar del Plata (BASICA real)
+v = build_vars(r, provider_key="dainus")
+check("fijo interior (dainus) → fmt_con_0", v["TELVAL_DIAL"] == "02234105000",
+      f"got: {v.get('TELVAL_DIAL')}")
+
+# Móvil AMBA e interior: sin override, igual que metrotel/nexo (fmt_con_0_15).
+r = validate("1565512215")
+v = build_vars(r, provider_key="dainus")
+check("móvil AMBA (dainus) → fmt_con_0_15", v["TELVAL_DIAL"] == "0111565512215",
+      f"got: {v.get('TELVAL_DIAL')}")
+
+# Un provider SIN landline_format_amba (metrotel) no debe verse afectado
+# por este cambio -- mismo fijo AMBA de arriba, resultado distinto.
+r = validate("1163296500")
+v = build_vars(r, provider_key="metrotel")
+check("fijo AMBA (metrotel, retrocompatible) → fmt_con_0 normal",
+      v["TELVAL_DIAL"] == "01163296500", f"got: {v.get('TELVAL_DIAL')}")
+
 # ─── Con prefix — se antepone literal al formato del proveedor ───────────────
 
 section("Con prefix (código de acceso del trunk)")

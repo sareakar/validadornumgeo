@@ -157,7 +157,7 @@ def _print_table(results: list[PhoneResult], provider_key: str | None,
                 fmt_cells = [r.formats.get(key, "") for key, _ in _ALL_FORMAT_KEYS]
                 cells = base_cells + fmt_cells + [fuente]
             elif provider_key:
-                fmt = format_for_provider(r.formats, r.line_type, provider_key) or ""
+                fmt = format_for_provider(r.formats, r.line_type, provider_key, r.geografia) or ""
                 cells = base_cells + [localidad, fmt, fuente]
             else:
                 cpp_fmt = r.formats.get("fmt_con_0_15", "") if r.modalidad in ("CPP","MPP") else ""
@@ -239,7 +239,7 @@ def _write_provider_csv(results: list[PhoneResult], provider_key: str, path: str
                 writer.writerow(row)
                 continue
 
-            numero = format_for_provider(r.formats, r.line_type, provider_key) or ""
+            numero = format_for_provider(r.formats, r.line_type, provider_key, r.geografia) or ""
             row = {tmpl.phone_column: numero}
 
             # Campos de metadata del resultado

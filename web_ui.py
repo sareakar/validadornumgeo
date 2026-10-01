@@ -509,7 +509,7 @@ def handle_process(handler):
             out = {k: str(v) for k, v in row_dict.items()}
             if r.valid:
                 out["tel_normalizado"] = (
-                    format_for_provider(r.formats, r.line_type, provider)
+                    format_for_provider(r.formats, r.line_type, provider, r.geografia)
                     if provider
                     else r.formats.get("fmt_10dig", "")
                 ) or ""

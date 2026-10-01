@@ -223,7 +223,7 @@ def _dial_vars(r, provider_key: str, prefix: str) -> dict:
     """TELVAL_DIAL / TELVAL_DIAL_ERROR — string listo para Dial() por trunk."""
     if not r.valid:
         return {"TELVAL_DIAL": "", "TELVAL_DIAL_ERROR": "numero_invalido"}
-    fmt = format_for_provider(r.formats, r.line_type, provider_key)
+    fmt = format_for_provider(r.formats, r.line_type, provider_key, r.geografia)
     if fmt is None:
         return {"TELVAL_DIAL": "", "TELVAL_DIAL_ERROR": "provider_desconocido"}
     return {"TELVAL_DIAL": f"{prefix}{fmt}", "TELVAL_DIAL_ERROR": ""}

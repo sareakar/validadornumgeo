@@ -329,6 +329,13 @@ def _build_formats(n10: str, area: str, subscriber: str, line_type: str) -> dict
         "fmt_intl":       f"54{n10}",
         "fmt_intl_movil": f"549{n10}" if is_mobile else f"54{n10}",
         "fmt_asterisk":   n10,
+        # Abonado sin área ni 0 -- solo marcable dentro de la MISMA área
+        # (ej. un trunk de AMBA llamando a otro número de AMBA). No usar
+        # como formato general: para otra área, esto NO es un número
+        # completo. Agregado para DAINUS (medimas.centraltelefonica.com.ar),
+        # que rechaza 0+11+abonado para fijo de AMBA (SIP 404) y solo
+        # acepta esta forma local.
+        "fmt_local_sin_area": subscriber,
     }
 
 
