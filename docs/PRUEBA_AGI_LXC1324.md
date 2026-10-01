@@ -606,6 +606,83 @@ pendiente, de todos modos, entender por qué el server quedó en
 `feat/web-ui` en vez de `main` y prolijamente unificar a una sola branch
 de despliegue.
 
+## Cuarto cliente — Dyktel (`dyktel.centraltelefonica.com.ar`, 2026-09-22/26)
+
+Caso con 4 trunks reales: `IDT`, `IPlan`, `IPlanManual` (wholesale, con
+código de acceso fijo — `2800288`/`2799788` — antepuesto al número ya
+formateado) y `ANURA` (directo, mismo formato que `metrotel`/`nexo`).
+Se completó solo `ANURA` (provider `anura`); `IDT`/`IPlan`/`IPlanManual`
+quedaron sin asignar (fallback seguro) a la espera de probar su formato.
+
+Hallazgos de esta integración:
+- **Dos "prefix" distintos**: el `Prefix` de `permisos.conf` puede ser
+  parte del número (`0`/`15`, como en los clientes anteriores) o un
+  código de acceso wholesale fijo (no depende del número). Se agregó
+  `telval_provider_prefix` como segunda columna en `id_proveedor`,
+  pasada como `agi_arg_4` de telval — mecanismo que ya existía en
+  `fastagi.py` desde el diseño original (`prefix` + formato), solo
+  faltaba poblarlo dinámicamente.
+- **MySQL migrado a otro server** (`192.168.1.204`, no `localhost`) —
+  encontrado leyendo `dataDB::dameConfig()` en vez de asumir. El mismo
+  script de lookup ya usa ese helper, así que no hizo falta ningún
+  cambio para que apuntara bien.
+- **Latencia real por datacenter**: telval corre en un Proxmox en
+  Canadá; Dyktel está en Argentina (~170ms RTT medido, estable). Con
+  `provider_key` se mandaban 16 variables `SET VARIABLE`, cada una un
+  round-trip bloqueante → ~2.7s de demora real en el `Dial()`,
+  reportado por el cliente como pérdida de llamadas. Un primer intento
+  de arreglo (pipelinear las 16 en un solo write) **causó un colgado
+  real con Asterisk bajo tráfico de discador** — revertido de
+  inmediato (`git revert`, commit `ba412b6`). El fix que sí funcionó:
+  reducir a 3 variables (`TELVAL_DIAL`/`TELVAL_DIAL_ERROR`/
+  `TELVAL_MODALIDAD`) en modo `provider_key` — mismo protocolo
+  secuencial, sin riesgo nuevo, ~0.5-1s en vez de ~2.7s (commit
+  `243dc56`). Además se agregó un timeout de 5s al socket del handler
+  AGI (commit `8a5635e`) — sin eso, una conexión colgada (red, o
+  simplemente un scanner de internet tipo Onyphe pegándole al puerto
+  4573 sin mandar nada) bloqueaba el hilo para siempre; confirmado que
+  el timeout no afecta performance de clientes reales (un hilo
+  bloqueado en I/O libera el GIL).
+- **Bug de capacidad en ANURA**: `call-limit` configurado en 10, con 14
+  canales activos reales → Asterisk rechazaba con "Couldn't call" sin
+  relación con el validador. El usuario lo puso en ilimitado para que
+  el límite real lo marque el carrier. Pendiente en Todoist (proyecto
+  AsterVoIP-Sprint): restringir el firewall de telval a las IPs de los
+  clientes — se encontraron conexiones de scanners de internet llegando
+  directo al puerto 4573 sin restricción.
+
+Evaluando (sin resolver todavía): una segunda instancia de telval en el
+Proxmox de Argentina para eliminar la latencia de raíz en vez de seguir
+optimizando el protocolo.
+
+## Quinto cliente — Medimas (`medimas.centraltelefonica.com.ar`, 2026-10-01)
+
+El caso más simple relevado hasta ahora: un solo trunk (`SIP/DAINUS`),
+un solo contexto, sin recorte de dígitos. Se usó igual el patrón
+dinámico (no hardcodeado) por la decisión del usuario de unificar un
+solo criterio para todos los clientes.
+
+**Formato de DAINUS con una particularidad nueva**: fijo de AMBA
+rechaza con **SIP 404** cualquier variante que incluya el área `11`
+(confirmado con `sip set debug peer DAINUS` — "Everyone is
+busy/congested" sin debug parecía congestión, no lo era, mismo tipo de
+señal engañosa que el caso de capacidad de ANURA) — solo acepta el
+abonado local sin área. Fijo de interior y móvil (AMBA e interior) sí
+usan el formato estándar (`fmt_con_0`/`fmt_con_0_15`).
+
+Esto no entraba en el modelo existente (`Provider` tenía un solo
+`landline_format`, sin distinguir geografía), así que se extendió el
+validador: `Provider.landline_format_amba` opcional (default `None`,
+no afecta a ningún provider existente), nuevo format key
+`fmt_local_sin_area` en `validator.py`, y `format_for_provider()` ahora
+recibe `geografia` opcional — actualizados los 6 call sites del repo
+(commit `e91dfe8`). Automatización de las pruebas de formato vía
+`asterisk -rx "channel originate Local/<numero>@test application Wait 2"`
+contra un contexto de prueba armado por el cliente, en vez de marcar a
+mano — más rápido, pero un primer intento comparó números de abonado
+distintos entre formatos y llevó a una conclusión parcialmente errónea
+antes de corregirlo retesteando con el mismo abonado real.
+
 ## Próximos pasos
 
 - [x] ~~Reemplazar el `provider_key` hardcodeado por una tabla MySQL~~ —
