@@ -113,11 +113,50 @@ sección 3.6):
    exigencia de "debe matchear exactamente una vez" que usábamos en los
    scripts Perl.
 6. `command` → `asterisk -rx "dialplan reload"`.
+7. `copy` → `agi-scripts/telval-trunk-sync.logrotate` a
+   `/etc/logrotate.d/telval-trunk-sync` (encontrado en Medimas: sin
+   esto el log crece sin límite, los LXC de AsterVoIP tienen
+   filesystems chicos).
+
+## Control node elegido: Podman, mismo patrón que `tf()`
+
+Se confirmó que la función `tf()` ya en `.bashrc` (Terraform vía Podman)
+monta `$HOME/.ssh` dentro del container — resuelve de entrada el
+problema de credenciales SSH para Ansible también. Se armó
+[`ansible/Dockerfile`](../ansible/Dockerfile): misma base
+(`python:3.11-slim`) que la imagen `astervoip-terraform`, con
+`openssh-client`+`sshpass` agregados (los clientes de AsterVoIP usan
+password, no clave). A diferencia de Terraform (un solo binario,
+`ENTRYPOINT` fijo), Ansible tiene varios (`ansible`,
+`ansible-playbook`, `ansible-vault`) — sin `ENTRYPOINT` fijo, el
+wrapper de bash pasa el binario como primer argumento.
+
+Build local ya probado: `podman build -t astervoip-ansible ansible/`
+→ `ansible-core 2.19.14` (sin pinnear todavía, ver pendiente abajo).
+
+Falta sumar al `.bashrc` la función equivalente a `tf()` (propuesta,
+sin aplicar todavía):
+
+```bash
+ans() {
+    podman run --rm -it \
+        -v "$(pwd):/app" \
+        -v "$HOME/.ssh:/root/.ssh" \
+        -w /app \
+        --security-opt label=disable \
+        astervoip-ansible "$@"
+}
+```
+
+Uso: `ans ansible-playbook -i inventory.yml deploy-trunk-sync.yml --check --diff`.
 
 ## Estado actual
 
-- [ ] Decidir dónde se instala el control node primero (local, infra-apps, ambos)
-- [ ] Instalar Ansible (pendiente de elegir opción de arriba)
+- [x] Decidir dónde se instala el control node primero → local, vía Podman (mismo patrón que `tf()`)
+- [x] Instalar Ansible → imagen `astervoip-ansible` buildeada (`ansible/Dockerfile`, ansible-core 2.19.14)
+- [ ] Agregar la función `ans()` al `.bashrc` (propuesta arriba, pendiente de aplicar)
+- [ ] Pinnear versión exacta de `ansible-core` en el Dockerfile (hoy instala "latest" al build)
+- [ ] Replicar la instalación en `infra-apps` (confirmar SO primero)
 - [ ] Armar `ansible/inventory.yml` (dyktel, medimas)
 - [ ] Armar `ansible/deploy-trunk-sync.yml`
 - [ ] Resolver manejo de credenciales (Ansible Vault)
