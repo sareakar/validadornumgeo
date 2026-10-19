@@ -1,0 +1,16 @@
+# Para /etc/logrotate.d/telval-trunk-sync en cada cliente que use
+# telvalTrunkSync.pl (ver ONBOARDING_CLIENTE.md, seccion 3.6). Sin este
+# archivo, el log crece sin limite -- notado en los LXC de AsterVoIP,
+# que suelen tener filesystems chicos. No necesita postrotate: el
+# script abre el archivo de nuevo en cada corrida del cron, no mantiene
+# el handle abierto entre ejecuciones.
+
+/var/log/telval-trunk-sync.log {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 640 root root
+}

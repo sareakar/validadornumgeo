@@ -227,9 +227,15 @@ cualquier cliente nuevo, **usar este patrón directamente en vez de
 2. Instalar el cron vía [`agi-scripts/telval-trunk-sync.cron.example`](../agi-scripts/telval-trunk-sync.cron.example)
    en `/etc/cron.d/` (cada 2 min) — **no** usar `crontab -e` directo, un
    archivo nuevo en `/etc/cron.d/` no toca nada existente.
-3. Correr el script a mano una vez, confirmar con
+3. Instalar [`agi-scripts/telval-trunk-sync.logrotate`](../agi-scripts/telval-trunk-sync.logrotate)
+   en `/etc/logrotate.d/telval-trunk-sync` — **no saltear este paso**:
+   sin rotación el log crece para siempre, y los LXC de AsterVoIP suelen
+   tener filesystems chicos (encontrado en Medimas). Validar con
+   `logrotate -d /etc/logrotate.d/telval-trunk-sync` (debe listar
+   nuestro archivo sin errores).
+4. Correr el script a mano una vez, confirmar con
    `asterisk -rx "database get SIP/<trunk> telvalProvider"`.
-4. En el dialplan, reemplazar la línea
+5. En el dialplan, reemplazar la línea
    `AGI(pbx-ip/telvalTrunkProvider.agi,${Trunk})` por:
    ```
    same => n,Set(TelvalProvider=${DB(${Trunk}/telvalProvider)})
@@ -238,7 +244,7 @@ cualquier cliente nuevo, **usar este patrón directamente en vez de
    El resto del bloque (`GotoIf`, llamada a telval, fallback) queda
    igual — es un cambio de una línea por macro, sin tocar la lógica de
    validación.
-5. `telvalTrunkProvider.agi` queda instalado pero sin uso — no borrar,
+6. `telvalTrunkProvider.agi` queda instalado pero sin uso — no borrar,
    sirve de rollback rápido si algo del sync falla.
 
 **Trade-off**: ventana de staleness de hasta 2 min entre un cambio en
