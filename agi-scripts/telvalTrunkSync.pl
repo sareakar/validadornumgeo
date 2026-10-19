@@ -45,6 +45,21 @@ sub ast_cli {
     system($ASTERISK_BIN, '-rx', $cmd);
 }
 
+sub ast_db_exists {
+    my ($family, $key) = @_;
+    my $out = qx($ASTERISK_BIN -rx "database get $family $key" 2>/dev/null);
+    return defined($out) && $out =~ /^Value:/m;
+}
+
+# "database del" de una key que no existe queda en el log de Asterisk
+# como WARNING (ast_db_del2) -- con el cron corriendo cada 1-2 min para
+# siempre, eso ensucia el log sin aportar nada para los trunks que
+# nunca tuvieron prefix (la mayoria). Se chequea antes de borrar.
+sub ast_db_del_if_exists {
+    my ($family, $key) = @_;
+    ast_cli("database del $family $key") if ast_db_exists($family, $key);
+}
+
 my %config = dameConfig();
 
 my $dbh = DBI->connect(
@@ -83,13 +98,13 @@ while (my ($name, $provider, $prefix) = $sth->fetchrow_array) {
     if ($provider ne "") {
         ast_cli("database put SIP/$name telvalProvider $provider");
     } else {
-        ast_cli("database del SIP/$name telvalProvider");
+        ast_db_del_if_exists("SIP/$name", "telvalProvider");
     }
 
     if ($prefix ne "") {
         ast_cli("database put SIP/$name telvalProviderPrefix $prefix");
     } else {
-        ast_cli("database del SIP/$name telvalProviderPrefix");
+        ast_db_del_if_exists("SIP/$name", "telvalProviderPrefix");
     }
 
     $synced++;
