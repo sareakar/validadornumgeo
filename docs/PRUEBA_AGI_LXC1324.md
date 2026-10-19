@@ -683,6 +683,27 @@ mano — más rápido, pero un primer intento comparó números de abonado
 distintos entre formatos y llevó a una conclusión parcialmente errónea
 antes de corregirlo retesteando con el mismo abonado real.
 
+### Optimización — sync cron + AstDB (2026-10-19), piloto en Medimas
+
+Reemplaza el lookup MySQL por-llamada de `telvalTrunkProvider.agi`
+(~20ms por intento de trunk, notorio en discadores de alto volumen) por
+`agi-scripts/telvalTrunkSync.pl`: un cron cada 2 min que sincroniza
+`id_proveedor` completa hacia AstDB (altas y bajas, idempotente), y un
+cambio de una línea en `macro-dialout`/`macro-dialout-discadores` —
+`AGI(pbx-ip/telvalTrunkProvider.agi,${Trunk})` pasa a ser
+`Set(TelvalProvider=${DB(${Trunk}/telvalProvider)})` +
+`Set(TelvalProviderPrefix=${DB(${Trunk}/telvalProviderPrefix)})`. Resto
+del bloque (fallback, caso wholesale) sin cambios.
+
+Validado en Medimas: el cron corrió solo (confirmado esperando un ciclo
+automático después de una corrida manual), y tráfico real de discador
+(`CRM-dialinterno`) resolvió `provider=dainus` vía AstDB sin pasar por
+el AGI. `telvalTrunkProvider.agi` queda instalado sin uso por si hace
+falta volver atrás. Detalle del patrón en
+[ONBOARDING_CLIENTE.md](ONBOARDING_CLIENTE.md), sección 3.6. Pendiente:
+aplicar lo mismo en Dyktel (vía el playbook de Ansible que se está
+armando, ver [ANSIBLE_PROCEDIMIENTO.md](ANSIBLE_PROCEDIMIENTO.md)).
+
 ## Próximos pasos
 
 - [x] ~~Reemplazar el `provider_key` hardcodeado por una tabla MySQL~~ —

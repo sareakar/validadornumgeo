@@ -1,0 +1,12 @@
+# Archivo para /etc/cron.d/telval-trunk-sync (no para `crontab -e`).
+# Corre telvalTrunkSync.pl cada 2 min para mantener AstDB sincronizado
+# contra la tabla MySQL de trunks -- reemplaza el lookup por-llamada de
+# telvalTrunkProvider.agi (ver docs/PRUEBA_AGI_LXC1324.md, sección
+# "Quinto cliente - Medimas" y la tarea de Jira de optimización).
+#
+# Ajustar la ruta si el script se instala en otro lado que
+# /usr/local/bin/ (en Medimas se instaló ahí; otros clientes de
+# AsterVoIP suelen usar /var/lib/asterisk/scripts/, cualquiera sirve).
+
+MAILTO=""
+*/2 * * * *  root perl /usr/local/bin/telvalTrunkSync.pl > /dev/null

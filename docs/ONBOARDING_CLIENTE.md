@@ -210,6 +210,41 @@ aborta si no es exactamente 1 — evita errores de escaping de `su -c
 "..."` anidado y ediciones a ciegas. Ver ejemplos de estos scripts en el
 historial de la bitácora.
 
+### 3.6 Optimización recomendada: sync cron + AstDB (en vez de AGI por-llamada)
+
+`telvalTrunkProvider.agi` (3.4/3.5) abre una conexión MySQL **nueva en
+cada llamada** — medido ~20ms por intento de trunk. En discadores de
+alto volumen (miles de llamadas/min, ej. Dyktel, Medimas) eso es trabajo
+evitable: el mapeo trunk→provider_key cambia rarísima vez. Para
+cualquier cliente nuevo, **usar este patrón directamente en vez de
+3.4/3.5** (validado primero en Medimas, 2026-10-19):
+
+1. Instalar [`agi-scripts/telvalTrunkSync.pl`](../agi-scripts/telvalTrunkSync.pl)
+   (ej. en `/usr/local/bin/`) — lee toda la tabla MySQL y sincroniza
+   `database put`/`database del` en AstDB (`SIP/<trunk>/telvalProvider`,
+   `SIP/<trunk>/telvalProviderPrefix`) para altas y bajas, idempotente
+   en cada corrida.
+2. Instalar el cron vía [`agi-scripts/telval-trunk-sync.cron.example`](../agi-scripts/telval-trunk-sync.cron.example)
+   en `/etc/cron.d/` (cada 2 min) — **no** usar `crontab -e` directo, un
+   archivo nuevo en `/etc/cron.d/` no toca nada existente.
+3. Correr el script a mano una vez, confirmar con
+   `asterisk -rx "database get SIP/<trunk> telvalProvider"`.
+4. En el dialplan, reemplazar la línea
+   `AGI(pbx-ip/telvalTrunkProvider.agi,${Trunk})` por:
+   ```
+   same => n,Set(TelvalProvider=${DB(${Trunk}/telvalProvider)})
+   same => n,Set(TelvalProviderPrefix=${DB(${Trunk}/telvalProviderPrefix)})
+   ```
+   El resto del bloque (`GotoIf`, llamada a telval, fallback) queda
+   igual — es un cambio de una línea por macro, sin tocar la lógica de
+   validación.
+5. `telvalTrunkProvider.agi` queda instalado pero sin uso — no borrar,
+   sirve de rollback rápido si algo del sync falla.
+
+**Trade-off**: ventana de staleness de hasta 2 min entre un cambio en
+MySQL y que se refleje en AstDB — aceptable, es config que cambia con
+frecuencia bajísima.
+
 ## 4. Patrón hardcodeado (solo si un solo trunk confirmado)
 
 ```
