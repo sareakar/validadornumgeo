@@ -6,6 +6,80 @@
 > previa en Ansible, explicado en términos de lo que ya veníamos
 > haciendo a mano (SSH + scp + sudo) en todo este proyecto.
 
+## Procedimiento de despliegue, paso a paso
+
+Runbook corto para correr cualquiera de los dos playbooks
+(`deploy-trunk-sync.yml` o `onboard-client.yml`). El resto del
+documento es la bitácora de cómo se armó esto — esta sección es la que
+se usa en el día a día.
+
+### 0. Pre-requisitos (una sola vez por máquina)
+
+```bash
+cd ~/src/validadortelefonico/ansible && podman build -t astervoip-ansible .
+```
+
+Confirmar que la función `ans()` está en `~/.bashrc` (ver sección
+"Control node elegido" más abajo) y que `source ~/.bashrc` ya corrió en
+la terminal que vas a usar.
+
+### 1. Exportar credenciales (nunca quedan en ningún archivo)
+
+```bash
+export TELVAL_SSH_PASSWORD='la_password_de_soporte'
+export ANSIBLE_PIPELINING=True          # sin esto, falla bajo sudo+pty (ver "Problemas reales" abajo)
+# Solo si el host usa `su` en vez de `sudo` (hoy: dyktel):
+export TELVAL_DYKTEL_ROOT_PASSWORD='la_password_de_root'
+```
+
+### 2. Dry-run — siempre primero, nunca te saltees este paso
+
+```bash
+cd ~/src/validadortelefonico   # la raiz del repo, no ansible/ -- importa por los paths relativos
+ans ansible-playbook -i ansible/inventory.yml ansible/deploy-trunk-sync.yml --limit <host> --check --diff
+```
+
+Leer la salida tarea por tarea:
+- **`ok`** (verde) = sin cambios, ya está como el playbook espera.
+- **`changed`** (amarillo) = esto se modificaría — mirar el diff que
+  imprime arriba de la línea, igual que revisábamos un diff a mano.
+- **`skipping`** (cyan) = tarea que modifica algo real, Ansible la salta
+  en modo `--check` a propósito (no se puede "simular" un `ALTER TABLE`
+  o una edición de `macros.conf` sin hacerla).
+- **`failed`** (rojo) = algo rompió — parar acá, no seguir al paso 3.
+
+### 3. Aplicar de verdad (sin `--check`)
+
+```bash
+ans ansible-playbook -i ansible/inventory.yml ansible/deploy-trunk-sync.yml --limit <host>
+```
+
+Mismo comando, sin `--check --diff`. Recién acá se tocan archivos/DB/cron de verdad.
+
+### 4. Confirmar que quedó bien
+
+```bash
+# Repetir el dry-run -- debe mostrar todo "ok", nada "changed"
+ans ansible-playbook -i ansible/inventory.yml ansible/deploy-trunk-sync.yml --limit <host> --check --diff
+```
+
+Si algo sigue en `changed` en la segunda pasada, el playbook no es
+idempotente para ese caso — no asumir que "ya está", revisar por qué.
+
+### `onboard-client.yml`: mismo procedimiento, con un paso manual al final
+
+Pasos 1-4 iguales, cambiando el nombre del playbook. Este además
+incluye el cambio en `macros.conf` — después de aplicarlo (paso 3),
+**todavía falta a mano**:
+1. Confirmar el formato real del trunk con llamadas de prueba (ver
+   `docs/ONBOARDING_CLIENTE.md`, sección 3.1).
+2. Crear/confirmar el `provider_key` en `providers.py`.
+3. `UPDATE id_proveedor SET telval_provider='<key>' WHERE name='<Trunk>';`
+4. Probar con una llamada real.
+
+Esto es deliberado — no se puede automatizar sin un humano escuchando
+si la llamada salió bien.
+
 ## Por qué Ansible acá
 
 Hasta ahora, cada cambio en un cliente (instalar un script, editar
