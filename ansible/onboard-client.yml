@@ -1,0 +1,140 @@
+---
+# Integra telval de punta a punta en un AsterVoIP recien instalado
+# ("limpio" -- sin customizaciones previas en macros.conf). Para
+# retrofit de un cliente YA en produccion con macros.conf customizado,
+# usar el flujo manual (ver docs/PRUEBA_AGI_LXC1324.md, bitacora de
+# cada cliente real) o deploy-trunk-sync.yml si solo falta la parte del
+# sync cron.
+#
+# Pasos:
+#   1. Migrar MySQL (agregar columnas, sin asignar ningun provider_key
+#      todavia -- eso requiere confirmar el formato real del trunk con
+#      llamadas de prueba, es decision humana, ver seccion 3.1 del
+#      onboarding).
+#   2. Instalar telvalTrunkSync.pl + cron + logrotate (sync MySQL -> AstDB).
+#   3. Insertar el bloque de validacion en macros.conf (modo AstDB desde
+#      el dia 1, sin pasar por el AGI de lookup por-llamada que usaban
+#      los primeros clientes).
+#   4. Recargar el dialplan.
+#
+# Uso (desde la raiz del repo):
+#   export TELVAL_SSH_PASSWORD='...'
+#   ans ansible-playbook -i ansible/inventory.yml ansible/onboard-client.yml --limit <host> --check --diff
+#   ans ansible-playbook -i ansible/inventory.yml ansible/onboard-client.yml --limit <host>
+#
+# Despues de correr esto, todavia falta (manual, a proposito):
+#   - Confirmar el formato real del trunk con llamadas de prueba.
+#   - Agregar/crear el provider_key en providers.py si no existe uno
+#     con el formato correcto (ver docs/ONBOARDING_CLIENTE.md 3.1).
+#   - UPDATE id_proveedor SET telval_provider='<key>' WHERE name='<Trunk>';
+#   - Confirmar con una llamada real.
+
+- name: Onboarding completo de telval en un AsterVoIP limpio
+  hosts: all
+  become: yes
+  gather_facts: no
+
+  vars:
+    macros_conf_path: /etc/asterisk/partesextensions/macros.conf
+
+  tasks:
+    # ── 1. Migracion de MySQL ──────────────────────────────────────
+    - name: Copiar telvalDbMigrate.pl
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../agi-scripts/telvalDbMigrate.pl"
+        dest: /usr/local/bin/telvalDbMigrate.pl
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Validar sintaxis de telvalDbMigrate.pl
+      ansible.builtin.command:
+        cmd: perl -c /usr/local/bin/telvalDbMigrate.pl
+      changed_when: false
+
+    - name: Migrar esquema MySQL (agregar columnas si faltan)
+      ansible.builtin.command:
+        cmd: "perl /usr/local/bin/telvalDbMigrate.pl {{ mysql_db }} {{ mysql_table }}"
+      register: db_migrate
+      changed_when: "'CHANGED' in db_migrate.stdout"
+
+    - name: Mostrar resultado de la migracion
+      ansible.builtin.debug:
+        msg: "{{ db_migrate.stdout_lines }}"
+
+    # ── 2. Sync cron MySQL -> AstDB ─────────────────────────────────
+    - name: Copiar telvalTrunkSync.pl
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../agi-scripts/telvalTrunkSync.pl"
+        dest: /usr/local/bin/telvalTrunkSync.pl
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Validar sintaxis de telvalTrunkSync.pl
+      ansible.builtin.command:
+        cmd: perl -c /usr/local/bin/telvalTrunkSync.pl
+      changed_when: false
+
+    - name: Instalar cron del sync (cada 2 min, /etc/cron.d)
+      ansible.builtin.cron:
+        name: "telval trunk provider sync"
+        cron_file: telval-trunk-sync
+        user: root
+        minute: "*/2"
+        job: "perl /usr/local/bin/telvalTrunkSync.pl > /dev/null"
+
+    - name: Instalar logrotate del sync
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../agi-scripts/telval-trunk-sync.logrotate"
+        dest: /etc/logrotate.d/telval-trunk-sync
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Validar config de logrotate
+      ansible.builtin.command:
+        cmd: logrotate -d /etc/logrotate.d/telval-trunk-sync
+      changed_when: false
+      failed_when: "'error' in logrotate_validate.stderr | lower"
+      register: logrotate_validate
+
+    - name: Correr el sync una vez a mano
+      ansible.builtin.command:
+        cmd: perl /usr/local/bin/telvalTrunkSync.pl
+      changed_when: true
+
+    # ── 3. Bloque de validacion en macros.conf ──────────────────────
+    - name: Copiar telvalDialplanInstall.pl
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../agi-scripts/telvalDialplanInstall.pl"
+        dest: /usr/local/bin/telvalDialplanInstall.pl
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Validar sintaxis de telvalDialplanInstall.pl
+      ansible.builtin.command:
+        cmd: perl -c /usr/local/bin/telvalDialplanInstall.pl
+      changed_when: false
+
+    - name: Insertar bloque de validacion en macros.conf (aborta si no esta "limpio")
+      ansible.builtin.command:
+        cmd: "perl /usr/local/bin/telvalDialplanInstall.pl {{ macros_conf_path }}"
+      register: dialplan_install
+      changed_when: "dialplan_install is not skipped and 'bloque de telval insertado' in dialplan_install.stdout"
+      # Deliberadamente SIN check_mode:false -- en --check esta tarea se
+      # salta (default de Ansible para el modulo command), que es lo que
+      # queremos: el paso mas riesgoso del playbook nunca se ejecuta "de
+      # mentira", directamente no corre hasta el apply real.
+
+    - name: Mostrar resultado de la instalacion del dialplan
+      ansible.builtin.debug:
+        msg: "{{ dialplan_install.stdout_lines }}"
+      when: not dialplan_install.skipped | default(false)
+
+    - name: Recargar dialplan
+      ansible.builtin.command:
+        cmd: asterisk -rx "dialplan reload"
+      changed_when: true
+      when: dialplan_install.changed | default(false)

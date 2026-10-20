@@ -190,8 +190,55 @@ Uso: `ans ansible-playbook -i inventory.yml deploy-trunk-sync.yml --check --diff
 - [x] Armar `ansible/inventory.yml` (dyktel, medimas; Resermap afuera — sin sudo)
 - [x] Armar `ansible/deploy-trunk-sync.yml` (sin el paso de `macros.conf` todavía, a propósito)
 - [x] Probar con `--check --diff` contra Medimas, y aplicar de verdad — confirmado idempotente en la segunda corrida
+- [x] Armar `ansible/onboard-client.yml` — integración completa (DB + sync + **dialplan**) para un AsterVoIP recién instalado, ver sección propia abajo
 - [ ] Replicar la instalación en `infra-apps` (confirmar SO primero)
 - [ ] Resolver manejo de credenciales (Ansible Vault) — hoy usa variables de entorno (`TELVAL_SSH_PASSWORD`, `TELVAL_DYKTEL_ROOT_PASSWORD`), suficiente por ahora pero no versionable
-- [ ] Aplicar contra Dyktel (ojo con el problema #1 de arriba — ya resuelto en el Dockerfile, pero confirmar igual)
-- [ ] Decidir cómo incorporar el cambio de `macros.conf` (AGI → AstDB) al playbook, o si queda manual a propósito
+- [ ] Aplicar `deploy-trunk-sync.yml` contra Dyktel (ojo con el problema #1 de arriba — ya resuelto en el Dockerfile, pero confirmar igual)
+- [ ] Probar `onboard-client.yml` contra un AsterVoIP realmente limpio apenas haya uno disponible
 - [ ] Documentar cómo se agregan clientes nuevos al inventario a futuro
+
+## `onboard-client.yml` — integración completa en un AsterVoIP limpio
+
+A diferencia de `deploy-trunk-sync.yml` (solo la parte del sync, para
+retrofit de clientes ya en producción), este playbook hace **todo**:
+migra MySQL, instala el sync, **y** inserta el bloque de validación en
+`macros.conf` — pensado para un AsterVoIP recién instalado, sin
+customizaciones previas.
+
+Dos scripts nuevos en `agi-scripts/` (mismo criterio de siempre: Ansible
+orquesta, pero el trabajo riesgoso de edición de texto lo hace un
+script Perl con su propia lógica de seguridad, no un módulo nativo de
+Ansible):
+
+- **`telvalDbMigrate.pl`** — agrega las columnas a `id_proveedor` si
+  faltan (chequea con `SHOW COLUMNS` antes de alterar, idempotente). No
+  asigna ningún `provider_key` — eso sigue siendo decisión humana
+  después de probar el formato real del trunk.
+- **`telvalDialplanInstall.pl`** — inserta el bloque de validación
+  (modo AstDB) antes de **cada** `Dial()`. Hallazgo clave: la línea
+  `Dial(${Trunk}/${Prefix}${Numero},${Tods},${Ods}M(${macroCRM}))` es
+  **idéntica en los 4 clientes reales** integrados hasta ahora (Ungar,
+  Resermap, Dyktel, Medimas) a pesar de que cada uno tenía contexto
+  distinto alrededor — es parte del template base de AsterVoIP, no algo
+  que se customiza. Se usa como ancla universal: si aparece
+  **exactamente 2 veces** (`macro-dialout` + `macro-dialout-discadores`)
+  y no hay un marcador propio ya presente, inserta en los dos lugares
+  de una sola pasada y hace backup. Si no, **aborta sin tocar nada** —
+  un AsterVoIP ya customizado necesita el flujo manual de siempre, no
+  este script. Idempotente vía un comentario marcador
+  (`; TELVAL INTEGRATION...`) que se chequea antes de intentar nada.
+
+Probado localmente (no contra un cliente real todavía, no hay uno
+"limpio" disponible): inserción correcta contra una copia real del
+backup pre-cambios de Ungar (confirma el patrón en un **4to** cliente
+independiente), idempotencia en la segunda corrida, y aborto seguro
+contra un archivo con la cantidad "equivocada" de ocurrencias. También
+se confirmó por diseño que correrlo por error contra un cliente YA
+migrado (ej. Medimas) aborta solo — las líneas ya tienen label
+(`(telval_skip_dialout)`), no matchean el ancla "limpia" sin label.
+
+Después de correr este playbook, todavía falta a mano (a propósito, no
+automatizable): confirmar el formato real del trunk con llamadas de
+prueba, crear el `provider_key` en `providers.py` si no existe uno con
+ese formato, y el `UPDATE id_proveedor SET telval_provider=...` — ver
+el comentario de cabecera del propio playbook.
