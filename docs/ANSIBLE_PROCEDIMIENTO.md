@@ -150,16 +150,48 @@ ans() {
 
 Uso: `ans ansible-playbook -i inventory.yml deploy-trunk-sync.yml --check --diff`.
 
+## Problemas reales encontrados probando contra Medimas (2026-10-19)
+
+1. **`ansible-core` demasiado nuevo para Python del nodo remoto.**
+   `ansible-core` 2.19 (lo que instala `pip install ansible-core` sin
+   pinnear) usa sintaxis de Python 3.8+ en su propio `module_utils` —
+   falla con `SyntaxError` al ejecutar contra un nodo con Python más
+   viejo. Los clientes de AsterVoIP corren **Debian 10**, que trae
+   **Python 3.7.3** de fábrica. Confirmado el error real contra
+   Medimas, resuelto pinneando `ansible-core<2.16` en el Dockerfile
+   (resolvió a 2.15.13). **Aplica también a Dyktel** (mismo Debian 10).
+2. **Payload de módulo corrupto bajo `sudo` con pty.** Con `become` vía
+   `sudo` (que fuerza `-tt`, pseudo-terminal), la transferencia del
+   módulo (un blob grande) se corrompía — error genérico "Shared
+   connection... closed". Se resuelve con **pipelining**
+   (`ANSIBLE_PIPELINING=True`, reenviado por `ans()` junto con las
+   `TELVAL_*`) — evita el mecanismo de archivo temporal + base64 por
+   completo.
+3. **Paths relativos (`src:`) se resuelven contra la carpeta del
+   playbook, no contra el directorio desde donde se invoca.** Hubo que
+   usar `{{ playbook_dir }}/../agi-scripts/...` en vez de un path
+   relativo simple, para poder referenciar `agi-scripts/` (un nivel
+   arriba de `ansible/`) sin importar desde dónde se corra `ans`.
+4. **El módulo `cron` no reemplaza contenido pre-existente que no
+   reconoce como propio** — si un cron.d ya tenía una línea escrita a
+   mano (como en Medimas, instalada manualmente antes de tener el
+   playbook), Ansible agrega SU línea al lado en vez de reemplazar,
+   dejando el script corriendo duplicado. Se limpió a mano una sola vez
+   en Medimas; para clientes nuevos (que no tienen nada pre-existente)
+   esto no debería repetirse — pero revisar el archivo después del
+   primer apply en cualquier cliente que ya tuviera algo instalado a
+   mano.
+
 ## Estado actual
 
 - [x] Decidir dónde se instala el control node primero → local, vía Podman (mismo patrón que `tf()`)
-- [x] Instalar Ansible → imagen `astervoip-ansible` buildeada (`ansible/Dockerfile`, ansible-core 2.19.14)
-- [ ] Agregar la función `ans()` al `.bashrc` (propuesta arriba, pendiente de aplicar)
-- [ ] Pinnear versión exacta de `ansible-core` en el Dockerfile (hoy instala "latest" al build)
+- [x] Instalar Ansible → imagen `astervoip-ansible` buildeada (`ansible/Dockerfile`, `ansible-core<2.16` por compatibilidad con Python 3.7 de Debian 10)
+- [x] Agregar la función `ans()` al `.bashrc` (reenvía `TELVAL_*` y `ANSIBLE_*`)
+- [x] Armar `ansible/inventory.yml` (dyktel, medimas; Resermap afuera — sin sudo)
+- [x] Armar `ansible/deploy-trunk-sync.yml` (sin el paso de `macros.conf` todavía, a propósito)
+- [x] Probar con `--check --diff` contra Medimas, y aplicar de verdad — confirmado idempotente en la segunda corrida
 - [ ] Replicar la instalación en `infra-apps` (confirmar SO primero)
-- [ ] Armar `ansible/inventory.yml` (dyktel, medimas)
-- [ ] Armar `ansible/deploy-trunk-sync.yml`
-- [ ] Resolver manejo de credenciales (Ansible Vault)
-- [ ] Probar con `--check --diff` contra Medimas (ya tiene el cambio aplicado — sirve para confirmar que Ansible lo detecta como "sin cambios")
-- [ ] Aplicar contra Dyktel
+- [ ] Resolver manejo de credenciales (Ansible Vault) — hoy usa variables de entorno (`TELVAL_SSH_PASSWORD`, `TELVAL_DYKTEL_ROOT_PASSWORD`), suficiente por ahora pero no versionable
+- [ ] Aplicar contra Dyktel (ojo con el problema #1 de arriba — ya resuelto en el Dockerfile, pero confirmar igual)
+- [ ] Decidir cómo incorporar el cambio de `macros.conf` (AGI → AstDB) al playbook, o si queda manual a propósito
 - [ ] Documentar cómo se agregan clientes nuevos al inventario a futuro

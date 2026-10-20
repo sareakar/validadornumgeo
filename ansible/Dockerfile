@@ -18,10 +18,16 @@ RUN apt-get update \
        sshpass \
     && rm -rf /var/lib/apt/lists/*
 
-# Sin version fijada todavia -- primer build para tener algo andando.
-# Pendiente (ver docs/ANSIBLE_PROCEDIMIENTO.md): pinnear una version
-# exacta de ansible-core una vez que el playbook este estable, para
-# reproducibilidad entre esta maquina e infra-apps.
-RUN pip install --no-cache-dir ansible-core
+# Version fijada por COMPATIBILIDAD, no solo por reproducibilidad:
+# ansible-core 2.19 (ultima al momento de armar esto) ya usa sintaxis
+# de Python 3.8+ (parametros solo-posicionales) en su propio
+# module_utils, y falla con SyntaxError en el nodo remoto si el Python3
+# ahi es mas viejo. Los clientes de AsterVoIP corren Debian 10, que
+# trae Python 3.7.3 de fabrica -- confirmado con un SyntaxError real
+# contra medimas.centraltelefonica.com.ar antes de este pin. <2.16
+# evita el corte de compatibilidad (no se identifico la version exacta
+# donde ansible-core subio el Python minimo del nodo administrado a
+# 3.8 -- <2.16 da margen de sobra, verificado empiricamente).
+RUN pip install --no-cache-dir "ansible-core<2.16"
 
 WORKDIR /app

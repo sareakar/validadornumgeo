@@ -1,0 +1,36 @@
+all:
+  vars:
+    ansible_port: 2022
+    ansible_user: soporte
+    # No hardcodear la password -- se pasa por variable de entorno,
+    # mismo patron que SSHPASS usado manualmente durante todo este
+    # proyecto. Exportar antes de correr el playbook:
+    #   export TELVAL_SSH_PASSWORD='...'
+    # Pendiente (ver docs/ANSIBLE_PROCEDIMIENTO.md): migrar a Ansible
+    # Vault cuando el playbook este estable.
+    ansible_password: "{{ lookup('env', 'TELVAL_SSH_PASSWORD') }}"
+    ansible_ssh_common_args: "-o PreferredAuthentications=password -o PubkeyAuthentication=no"
+  hosts:
+    # soporte tiene sudo sin password -- become normal (sudo), sin
+    # password adicional.
+    medimas:
+      ansible_host: medimas.centraltelefonica.com.ar
+      mysql_db: asterisk
+      mysql_table: id_proveedor
+      mysql_host: localhost
+    # soporte NO es sudoer en este cliente -- escala con `su` directo a
+    # root (mismo patron manual usado durante toda la integracion).
+    # Password de root distinta a la de soporte -> variable de entorno
+    # separada: export TELVAL_DYKTEL_ROOT_PASSWORD='...'
+    dyktel:
+      ansible_host: dyktel.centraltelefonica.com.ar
+      mysql_db: asterisk
+      mysql_table: id_proveedor
+      mysql_host: 192.168.1.204   # DB migrada a otro server, ver docs/PRUEBA_AGI_LXC1324.md
+      ansible_become_method: su
+      ansible_become_password: "{{ lookup('env', 'TELVAL_DYKTEL_ROOT_PASSWORD') }}"
+
+# Resermap NO entra aca -- soporte sin sudo, decision explicita del
+# usuario de no tocar sudoers. Ese cliente sigue siendo 100% manual
+# (flujo colaborativo: el usuario pega comandos desde su propia sesion
+# root). Ningun tooling cambia eso.

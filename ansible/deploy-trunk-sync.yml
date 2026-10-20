@@ -1,0 +1,74 @@
+---
+# Despliega el sync cron MySQL -> AstDB (telvalTrunkSync.pl), reemplazo
+# del lookup por-llamada de telvalTrunkProvider.agi. Ver
+# docs/ONBOARDING_CLIENTE.md seccion 3.6 y docs/ANSIBLE_PROCEDIMIENTO.md.
+#
+# Deliberadamente NO incluye el cambio en macros.conf (AGI -> ${DB(...)})
+# todavia -- esa parte sigue el flujo manual de siempre (backup + diff +
+# aprobacion explicita antes de aplicar a un cliente en produccion). Este
+# playbook cubre solo la parte segura e idempotente: instalar el script,
+# el cron, el logrotate, y confirmar que sincroniza bien.
+#
+# Uso (correr desde la RAIZ del repo, no desde ansible/ -- el container
+# monta el directorio actual, y este playbook referencia agi-scripts/
+# con paths relativos a la raiz):
+#   export TELVAL_SSH_PASSWORD='...'
+#   export TELVAL_DYKTEL_ROOT_PASSWORD='...'   # solo si el --limit incluye dyktel
+#   ans ansible-playbook -i ansible/inventory.yml ansible/deploy-trunk-sync.yml --limit medimas --check --diff
+#   ans ansible-playbook -i ansible/inventory.yml ansible/deploy-trunk-sync.yml --limit medimas
+
+- name: Desplegar sync cron MySQL -> AstDB para telval_provider
+  hosts: all
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Copiar telvalTrunkSync.pl
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../agi-scripts/telvalTrunkSync.pl"
+        dest: /usr/local/bin/telvalTrunkSync.pl
+        owner: root
+        group: root
+        mode: "0750"
+      register: script_copy
+
+    - name: Validar sintaxis Perl
+      ansible.builtin.command:
+        cmd: perl -c /usr/local/bin/telvalTrunkSync.pl
+      register: perl_check
+      changed_when: false
+      check_mode: false   # de solo lectura -- correr tambien en --check
+
+    - name: Instalar cron (cada 2 min, /etc/cron.d, no toca crontabs existentes)
+      ansible.builtin.cron:
+        name: "telval trunk provider sync"
+        cron_file: telval-trunk-sync
+        user: root
+        minute: "*/2"
+        job: "perl /usr/local/bin/telvalTrunkSync.pl > /dev/null"
+
+    - name: Instalar logrotate
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../agi-scripts/telval-trunk-sync.logrotate"
+        dest: /etc/logrotate.d/telval-trunk-sync
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Validar config de logrotate
+      ansible.builtin.command:
+        cmd: logrotate -d /etc/logrotate.d/telval-trunk-sync
+      register: logrotate_check
+      changed_when: false
+      failed_when: "'error' in logrotate_check.stderr | lower"
+      check_mode: false   # de solo lectura -- correr tambien en --check
+
+    - name: Correr el sync una vez a mano (confirma conexion MySQL antes de confiar en el cron)
+      ansible.builtin.command:
+        cmd: perl /usr/local/bin/telvalTrunkSync.pl
+      register: sync_run
+      changed_when: true
+
+    - name: Mostrar resultado del sync
+      ansible.builtin.debug:
+        msg: "{{ sync_run.stdout_lines + sync_run.stderr_lines }}"
